@@ -13,11 +13,19 @@ import trimesh.transformations as tf
 import vrep
 vrep.simxFinish(-1)
 
+import matplotlib
+from matplotlib import pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits import mplot3d
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from matplotlib import pyplot as plt
+
 import lib
 import lib.utils
 from lib.utils import plot_mesh, format_htmatrix, calc_mesh_centroid, plot_equal_aspect
 
 from sys import platform
+from decode import parse_grasp, decode_grasp
 
 
 def find_name(to_find):
@@ -54,6 +62,115 @@ def spherical_rotate(max_rot):
     rotation = tf.quaternion_multiply(rotation, q_zr)
     return tf.quaternion_matrix(rotation)
 
+def load_mesh(mesh_path):
+    """Loads a mesh from file &computes it's centroid using V-REP style."""
+
+    print 'mesh_path: ', mesh_path
+    mesh = trimesh.load_mesh(mesh_path)
+
+    # V-REP encodes the object centroid as the literal center of the object,
+    # so we need to make sure the points are centered the same way
+    center = calc_mesh_centroid(mesh, center_type='vrep')
+    mesh.vertices -= center
+    return mesh
+
+
+def plot_mesh_with_normals(mesh, matrices, direction_vec, normals=None, axis=None):
+    """Visualize where we will sample grasp candidates from
+
+    Parameters
+    ----------
+    mesh_path : path to a given mesh
+    workspace2obj : 4x4 transform matrix from the workspace to object
+    axis : (optional) a matplotlib axis for plotting a figure
+    """
+
+    if isinstance(direction_vec, list):
+        dvec = np.atleast_2d(direction_vec).T
+    elif direction_vec.ndim == 1:
+        dvec = np.atleast_2d(direction_vec).T
+    else:
+        dvec = direction_vec
+
+    if axis is None:
+        figure = plt.figure()
+        axis = Axes3D(figure)
+        axis.autoscale(False)
+
+    # Construct a 3D mesh via matplotlibs 'PolyCollection'
+    poly = Poly3DCollection(mesh.triangles, linewidths=0.05, alpha=0.25)
+    poly.set_facecolor([0.5, 0.5, 1])
+    axis.add_collection3d(poly)
+
+    axis = plot_equal_aspect(mesh.vertices, axis)
+
+    for i in xrange(0, len(matrices), 10):
+
+        transform = lib.utils.format_htmatrix(matrices[i])
+
+        # We'll find the direction by finding the vector between two points
+        gripper_point = np.hstack([matrices[i, 3], matrices[i, 7], matrices[i, 11]])
+        gripper_point = np.atleast_2d(gripper_point)
+
+        direction = np.dot(transform[:3, :3], np.atleast_2d(direction_vec).T)
+        direction = np.atleast_2d(direction).T
+
+        # The plotted normals and grasp approach should be overlapping
+        if normals is not None:
+            a = np.hstack([gripper_point, -np.atleast_2d(normals[i])]).flatten()
+            axis.quiver(*a, color='r', length=0.1)
+
+        a = np.hstack([gripper_point, -direction]).flatten()
+        axis.quiver(*a, color='k', length=0.1)
+
+        axis.scatter(*gripper_point.flatten(), c='b', marker='o', s=10)
+
+    return axis
+
+def generate_candidates(mesh_path, num_samples=1000, noise_level=0.05,
+                        gripper_offset=-0.1, augment=True):
+    """Generates grasp candidates via surface normals of the object."""
+
+    # Defines the up-vector for the workspace frame
+    up_vector = np.asarray([0, 0, -1])
+
+    mesh = load_mesh(mesh_path)
+
+    #points = sample.sample_surface(mesh, num_samples)
+    points = trimesh.sample.sample_surface_even(mesh, num_samples)
+    normals, matrices = [], []
+
+    # Find the normals corresponding to the sampled points
+    triangles = mesh.triangles_center
+    for p in points:
+
+        face_idx = np.argmin(np.sum((p - triangles)**2, axis=1))
+        normal = mesh.triangles_cross[face_idx]
+        normal = lib.utils.normalize_vector(normal)
+
+        # Add random noise to the surface normals, centered around 0
+        if augment is True:
+            normal += np.random.uniform(-noise_level, noise_level)
+            normal = lib.utils.normalize_vector(normal)
+
+        # Since we need to set a pose for the gripper, we need to calculate the
+        # rotation matrix from a given surface normal
+        matrix = lib.utils.get_rot_mat(up_vector, normal)
+        matrix[:3, 3] = p
+
+        # Calculate an offset for the gripper from the object.
+        matrix[:3, 3] = np.dot(matrix, np.array([0, 0, gripper_offset, 1]).T)[:3]
+
+        matrices.append(matrix[:3].flatten())
+
+    '''
+    matrices = np.vstack(matrices)
+    plot_mesh_with_normals(mesh, matrices, up_vector)
+    mesh_name = mesh_path.split(os.path.sep)[-1].split('.')[0]
+    plt.title('Mesh: ' + mesh_name)
+    plt.show()
+    '''
+    return np.vstack(matrices)
 
 def randomize_pose(frame_work2cam, base_offset=0., offset_mag=0.01,
                    local_rot=None, global_rot=None, min_dist=0.4):
@@ -144,7 +261,10 @@ class SimulatorInterface(object):
         # Tell the scene to start running
         self._start()
 
+
     def _connect(self):
+        r = vrep.simxStopSimulation(-1, vrep.simx_opmode_oneshot_wait)
+
         clientID = vrep.simxStart(self.ip, self.port, True, False, 5000, 5)
         if clientID == -1:
             raise Exception('Unable to connect to address <%s> on port <%d>. ' \
@@ -180,9 +300,8 @@ class SimulatorInterface(object):
         if r != 1:
             raise Exception('Unable to start simulation.')
 
-        # Since we're just query simulation for camera images (for now), there's
-        # no reason to use any dynamics / have control over dynamics.
         vrep.simxSynchronous(self.clientID, False)
+        vrep.simxClearStringSignal(self.clientID, 'grasp_candidate', vrep.simx_opmode_oneshot)
 
     @staticmethod
     def decode_images(float_string, near_clip, far_clip, res_x=128, res_y=128):
@@ -198,8 +317,7 @@ class SimulatorInterface(object):
 
         # The image rows are inverted from what the camera sees in simulator
         images = np.concatenate([rgb, depth, mask], axis=2).astype(np.float32)
-        images = images[::-1]
-        return images.transpose(2, 0, 1)
+        return images[::-1].transpose(2, 0, 1)
 
     def isconnected(self):
         pass
@@ -233,8 +351,7 @@ class SimulatorInterface(object):
         in_ints = [resolution]
 
         # Prepare the inputs; we give it both a camera and object pose
-        in_floats = []
-        in_floats.extend(frame_work2cam)
+        in_floats = frame_work2cam.tolist()
         in_floats.extend([p_light_off])
         in_floats.extend([p_light_mag])
         in_floats.extend([rgb_near_clip])
@@ -250,7 +367,6 @@ class SimulatorInterface(object):
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
              vrep.sim_scripttype_childscript, 'queryCamera', in_ints,
              in_floats, in_strings, emptyBuff, vrep.simx_opmode_blocking)
-        vrep.simxSynchronousTrigger(self.clientID)
 
         if r[0] != 0 :
             return None, None, None
@@ -266,32 +382,20 @@ class SimulatorInterface(object):
 
         return grasp, images, frame_work2cam_ht
 
-    def send_grasp(self, object_name, frame_world2work, frame_work2obj,
-                    frame_work2cam, grasp_wrt_cam, reset_container=0):
-        """TODO: Calculate an optimized frame_work2palm matrix, and send that
-        as well when we want to verify / test grasps.
-        """
+    def view_grasp(self, frame_world2work, frame_work2cam, grasp_wrt_cam, reset_container=0):
 
         # Prepare the inputs; we give it both a camera and object pose
-        in_floats = []
-        in_floats.extend(frame_world2work)
-        in_floats.extend(frame_work2obj)
+        in_floats = frame_world2work.tolist()
         in_floats.extend(frame_work2cam)
         in_floats.extend(grasp_wrt_cam)
 
-        in_strings = []
-        in_strings.extend([find_name(object_name)])
-
-        in_ints = []
-        in_ints.extend([reset_container])
+        in_ints = [reset_container]
 
         # Make a call to the simulator
         emptyBuff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
              vrep.sim_scripttype_childscript, 'displayGrasp', in_ints,
-             in_floats, in_strings, emptyBuff, vrep.simx_opmode_blocking)
-        vrep.simxSynchronousTrigger(self.clientID)
-
+             in_floats, [], emptyBuff, vrep.simx_opmode_blocking)
         return r
 
     def load_object(self, object_path, com, mass, inertia):
@@ -333,89 +437,46 @@ class SimulatorInterface(object):
             raise Exception('Error setting object pose!')
         return r[2] # floats
 
-
     def run_candidate(self, frame_work2palm):
 
         if not isinstance(frame_work2palm, list):
             frame_work2palm = frame_work2palm.tolist()
 
-        # Make a call to the simulator
-        emptyBuff = bytearray()
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'runGrasp', [],
-             frame_work2palm, [], emptyBuff, vrep.simx_opmode_blocking)
-        vrep.simxSynchronousTrigger(self.clientID)
+        for signal in ['header', 'pregrasp', 'postgrasp']:
+            vrep.simxClearStringSignal(self.clientID, signal, vrep.simx_opmode_oneshot)
 
-        # TODO
-        # NOTE: Watch these modes of operation
-        # http://www.coppeliarobotics.com/helpFiles/en/remoteApiFunctionsPython.htm#simxGetStringSignal
-        mode = vrep.simx_opmode_streaming
-        while not vrep.simxGetStringSignal(self.clientID, 'postgrasp', mode):
-            time.sleep(0.1)
-            mode = simx_opmode_buffer
+        # Launch the threaded app
+        vals = vrep.simxPackFloats(frame_work2palm)
+        vrep.simxSetStringSignal(self.clientID, 'grasp_candidate', vals, vrep.simx_opmode_oneshot)
 
-        r, header = vrep.simxGetStringSignal(self.clientID,'header', vrep.simx_opmode_streaming)
-        r, pregrasp = vrep.simxGetStringSignal(self.clientID,'pregrasp', vrep.simx_opmode_streaming)
-        r, postgrasp = vrep.simxGetStringSignal(self.clientID,'postgrasp', vrep.simx_opmode_streaming)
+        r, header = vrep.simxGetStringSignal(self.clientID,'header', vrep.simx_opmode_oneshot_wait)
+        while r != vrep.simx_return_ok:
+            r, header = vrep.simxGetStringSignal(self.clientID,'header', vrep.simx_opmode_oneshot_wait)
+
+        r, pregrasp = vrep.simxGetStringSignal(self.clientID,'pregrasp', vrep.simx_opmode_oneshot_wait)
+        while r != vrep.simx_return_ok:
+            r, pregrasp = vrep.simxGetStringSignal(self.clientID,'pregrasp', vrep.simx_opmode_oneshot_wait)
+
+        r, postgrasp = vrep.simxGetStringSignal(self.clientID,'postgrasp', vrep.simx_opmode_oneshot_wait)
+        while r != vrep.simx_return_ok:
+            r, postgrasp = vrep.simxGetStringSignal(self.clientID,'postgrasp', vrep.simx_opmode_oneshot_wait)
 
         for signal in ['header', 'pregrasp', 'postgrasp']:
             vrep.simxClearStringSignal(self.clientID, signal, vrep.simx_opmode_oneshot)
 
-        #header = vrep.simxUnpackFloats(header)
-        pregrasp = vrep.simxUnpackFloats(pregrasp)
-        postgrasp = vrep.simxUnpackFloats(postgrasp)
-        return header, pregrasp, postgrasp
+        header = header.lstrip('{').rstrip('}')
+        if header == '-1':
+            return None, None
+        pregrasp = parse_grasp(vrep.simxUnpackFloats(pregrasp), header)
+        postgrasp = parse_grasp(vrep.simxUnpackFloats(postgrasp), header)
+
+        return pregrasp, postgrasp
 
     def start(self):
         pass
 
 
 
-
-
-def load_mesh(mesh_path):
-    """Loads a mesh from file &computes it's centroid using V-REP style."""
-
-    print 'mesh_path: ', mesh_path
-    mesh = trimesh.load_mesh(mesh_path)
-
-    # V-REP encodes the object centroid as the literal center of the object,
-    # so we need to make sure the points are centered the same way
-    center = calc_mesh_centroid(mesh, center_type='vrep')
-    mesh.vertices -= center
-    return mesh
-
-def generate_candidates(mesh_path, num_samples=1000, noise_level=0.05, gripper_offset=-0.1):
-    """Generates grasp candidates via surface normals of the object."""
-
-    # Defines the up-vector for the workspace frame
-    up_vector = np.asarray([0, 0, -1])
-
-    mesh = load_mesh(mesh_path)
-
-    #points = sample.sample_surface(mesh, num_samples)
-    points = trimesh.sample.sample_surface_even(mesh, num_samples)
-    normals, matrices = [], []
-
-    # Find the normals corresponding to the sampled points
-    triangles = mesh.triangles_center
-    for p in points:
-
-        face_idx = np.argmin(np.sum((p - triangles)**2, axis=1))
-        normal = mesh.triangles_cross[face_idx]
-        normal = lib.utils.normalize_vector(normal)
-
-        # Since we need to set a pose for the gripper, we need to calculate the
-        # rotation matrix from a given surface normal
-        matrix = lib.utils.get_rot_mat(up_vector, normal)
-        matrix[:3, 3] = p
-
-        # Calculate an offset for the gripper from the object.
-        matrix[:3, 3] = np.dot(matrix, np.array([0, 0, gripper_offset, 1]).T)[:3]
-
-        matrices.append(matrix[:3].flatten())
-
-    return np.vstack(matrices)
 
 
 if __name__ == '__main__':
@@ -426,13 +487,14 @@ if __name__ == '__main__':
     sys.path.append('..')
     from lib.python_config import config_simulation_path, config_mesh_dir
 
-    GLOBAL_DATAFILE = 'C:/Users/Matt/Documents/grasping-multi-view/learning/grasping.hdf5'
+    GLOBAL_DATAFILE = 'C:/Users/Matt/Documents/grasping-multi-view/learning/valid256.hdf5'
 
     sim = SimulatorInterface(port=19999)
 
     # Load the data. Note that Grasps are encoded WRT workspace frame
     dataset = h5py.File(GLOBAL_DATAFILE, 'r')
-    grasps, props = utils.load_subset(dataset, dataset.keys())
+    grasps = dataset['grasps']
+    props = dataset['props']
 
     for i in xrange(len(grasps)):
 
@@ -440,7 +502,7 @@ if __name__ == '__main__':
         mass = props['work2mass'][i]
         inertia = props['work2inertia'][i]
 
-        object_name = props['object_name'][i, 0] + '.stl'
+        object_name = find_name(props['object_name'][i, 0]) + '.stl'
         object_path = os.path.join(config_mesh_dir, object_name)
 
         sim.load_object(object_path, com, mass, inertia)
@@ -449,82 +511,41 @@ if __name__ == '__main__':
 
         sim.query(props['frame_work2palm'][i], props['frame_world2work'][i], grasps[i])
 
+        sim.view_grasp(props['frame_world2work'][i],
+                       props['frame_work2cam'][i],
+                       grasps[i], reset_container=1)
+        pregrasp, postgrasp = sim.run_candidate(props['frame_work2palm'][i])
+        if pregrasp is None or postgrasp is None:
+            continue
 
+
+        '''
         candidates = generate_candidates(object_path, num_samples=1000,
-                                         noise_level=0.05, gripper_offset=-0.1)
+                                         noise_level=0.05,
+                                         gripper_offset=-0.15)
 
-
-        sim.set_object_pose(props['frame_work2obj'][i])
-        pose = sim.get_object_pose()
-
-        print pose
-        print np.asarray(pose)
-        pose = format_htmatrix(np.asarray(pose))
-
-        for row in candidates:
+        pose = format_htmatrix(np.asarray(sim.get_object_pose()))
+        for count, row in enumerate(candidates):
 
             mult = np.dot(pose, format_htmatrix(row))
-            if mult[3, 3] * 10 <= 0.:
-                continue
-            print 'Object pose: ', pose, 'set pose: ', props['frame_work2obj'][i]
 
+            direction = np.dot(mult[:3, :3], np.atleast_2d([0, 0, 1]).T)
+            if direction[2] * 10 <= 0.:
+                continue
+            print count
+
+            print 'Attempting grasp'
             header, pregrasp, postgrasp = sim.run_candidate(row)
 
-            print header, pregrasp, postgrasp
+            if header == '-1':
+                continue
 
+            from decode import parse_grasp, decode_grasp
+            parsed = parse_grasp(pregrasp, header)
+            decoded = decode_grasp(parsed)
 
+            print 'Attempting original grasp'
+            header, pregrasp, postgrasp = sim.run_candidate(decoded['frame_work2palm'][i])
 
-
-    misc_params = {'rgb_near_clip':0.2,
-                   'depth_near_clip':0.2,
-                   'rgb_far_clip':10.,
-                   'depth_far_clip':1.25,
-                   'camera_fov':75*np.pi/180,
-                   'resolution':256,
-                   'base_offset':-0.4,
-                   'offset_mag':0.15,
-                   'local_rot':(10, 10, 10),
-                   'global_rot':(30, 30, 30),
-                   'p_light_off':0.25,
-                   'p_light_mag':0.1,
-                   'reorient_up':True,
-                   'randomize':True,
-                   'texture_path':'C:/Users/Matt/Documents/grasping-multi-view/texture.png'}
-
-
-
-
-    # Loop over all the grasps, sample num_samples_per views and save image
-    for i in xrange(0, grasps.shape[0], 1):
-
-        print 'Sampling images for datapoint %d/%d'%(i, grasps.shape[0])
-
-        p = {key : props[key][i] for key in props}
-        p.update(misc_params)
-
+            time.sleep(5)
         '''
-        p['randomize'] = False
-        base_offset = -np.random.uniform(0.4, 0.7)
-        offset_mag = 0.1
-        local_rot = (30, 30, 30)
-        global_rot = (60, 60, 60)
-        min_dist = 0.6
-
-        p['frame_work2cam'] = randomize_pose(None, base_offset, offset_mag,
-                                             local_rot, global_rot, min_dist)
-        '''
-        p['frame_work2cam'] = p['frame_work2palm']
-
-        _, image, _ = sim.query(grasps[i], **p)
-
-        unique = np.unique(image[0, 4])
-        for u in unique:
-            print u, np.sum(image[0, 4] == u)
-
-        if image is None:
-            raise Exception('No image returned.')
-
-        #import matplotlib.pyplot as plt
-        #plt.imshow(image[0, :3].transpose(1, 2, 0))
-        #plt.show()
-        time.sleep(2)
