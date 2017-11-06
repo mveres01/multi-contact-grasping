@@ -13,30 +13,14 @@ import trimesh.transformations as tf
 import vrep
 vrep.simxFinish(-1)
 
-import matplotlib
-from matplotlib import pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits import mplot3d
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from matplotlib import pyplot as plt
-
 import lib
 import lib.utils
-from lib.utils import plot_mesh, format_htmatrix, calc_mesh_centroid, plot_equal_aspect
+from lib.utils import format_htmatrix
+from lib.python_config import project_dir
 
 from sys import platform
 from decode import parse_grasp, decode_grasp
-
-
-def find_name(to_find):
-    from lib.python_config import config_mesh_dir
-
-    meshes = os.listdir(config_mesh_dir)
-    for mesh_name in meshes:
-        if str(to_find) in mesh_name:
-            return mesh_name.split('.')[0]
-    return None
-
+from candidates import load_mesh, generate_candidates
 
 def rand_step(max_angle):
     """Returns a random point between (-max_angle, max_angle) in radians."""
@@ -46,7 +30,7 @@ def rand_step(max_angle):
 
 
 def spherical_rotate(max_rot):
-    """Performs a local & global spherical rotation of a HT matrix."""
+    """Calculate a random rotation matrix using angles in max_rot."""
 
     assert isinstance(max_rot, tuple) and len(max_rot) == 3
 
@@ -62,119 +46,15 @@ def spherical_rotate(max_rot):
     rotation = tf.quaternion_multiply(rotation, q_zr)
     return tf.quaternion_matrix(rotation)
 
-def load_mesh(mesh_path):
-    """Loads a mesh from file &computes it's centroid using V-REP style."""
-
-    print 'mesh_path: ', mesh_path
-    mesh = trimesh.load_mesh(mesh_path)
-
-    # V-REP encodes the object centroid as the literal center of the object,
-    # so we need to make sure the points are centered the same way
-    center = calc_mesh_centroid(mesh, center_type='vrep')
-    mesh.vertices -= center
-    return mesh
-
-
-def plot_mesh_with_normals(mesh, matrices, direction_vec, normals=None, axis=None):
-    """Visualize where we will sample grasp candidates from
-
-    Parameters
-    ----------
-    mesh_path : path to a given mesh
-    workspace2obj : 4x4 transform matrix from the workspace to object
-    axis : (optional) a matplotlib axis for plotting a figure
-    """
-
-    if isinstance(direction_vec, list):
-        dvec = np.atleast_2d(direction_vec).T
-    elif direction_vec.ndim == 1:
-        dvec = np.atleast_2d(direction_vec).T
-    else:
-        dvec = direction_vec
-
-    if axis is None:
-        figure = plt.figure()
-        axis = Axes3D(figure)
-        axis.autoscale(False)
-
-    # Construct a 3D mesh via matplotlibs 'PolyCollection'
-    poly = Poly3DCollection(mesh.triangles, linewidths=0.05, alpha=0.25)
-    poly.set_facecolor([0.5, 0.5, 1])
-    axis.add_collection3d(poly)
-
-    axis = plot_equal_aspect(mesh.vertices, axis)
-
-    for i in xrange(0, len(matrices), 10):
-
-        transform = lib.utils.format_htmatrix(matrices[i])
-
-        # We'll find the direction by finding the vector between two points
-        gripper_point = np.hstack([matrices[i, 3], matrices[i, 7], matrices[i, 11]])
-        gripper_point = np.atleast_2d(gripper_point)
-
-        direction = np.dot(transform[:3, :3], np.atleast_2d(direction_vec).T)
-        direction = np.atleast_2d(direction).T
-
-        # The plotted normals and grasp approach should be overlapping
-        if normals is not None:
-            a = np.hstack([gripper_point, -np.atleast_2d(normals[i])]).flatten()
-            axis.quiver(*a, color='r', length=0.1)
-
-        a = np.hstack([gripper_point, -direction]).flatten()
-        axis.quiver(*a, color='k', length=0.1)
-
-        axis.scatter(*gripper_point.flatten(), c='b', marker='o', s=10)
-
-    return axis
-
-def generate_candidates(mesh_path, num_samples=1000, noise_level=0.05,
-                        gripper_offset=-0.1, augment=True):
-    """Generates grasp candidates via surface normals of the object."""
-
-    # Defines the up-vector for the workspace frame
-    up_vector = np.asarray([0, 0, -1])
-
-    mesh = load_mesh(mesh_path)
-
-    #points = sample.sample_surface(mesh, num_samples)
-    points = trimesh.sample.sample_surface_even(mesh, num_samples)
-    normals, matrices = [], []
-
-    # Find the normals corresponding to the sampled points
-    triangles = mesh.triangles_center
-    for p in points:
-
-        face_idx = np.argmin(np.sum((p - triangles)**2, axis=1))
-        normal = mesh.triangles_cross[face_idx]
-        normal = lib.utils.normalize_vector(normal)
-
-        # Add random noise to the surface normals, centered around 0
-        if augment is True:
-            normal += np.random.uniform(-noise_level, noise_level)
-            normal = lib.utils.normalize_vector(normal)
-
-        # Since we need to set a pose for the gripper, we need to calculate the
-        # rotation matrix from a given surface normal
-        matrix = lib.utils.get_rot_mat(up_vector, normal)
-        matrix[:3, 3] = p
-
-        # Calculate an offset for the gripper from the object.
-        matrix[:3, 3] = np.dot(matrix, np.array([0, 0, gripper_offset, 1]).T)[:3]
-
-        matrices.append(matrix[:3].flatten())
-
-    '''
-    matrices = np.vstack(matrices)
-    plot_mesh_with_normals(mesh, matrices, up_vector)
-    mesh_name = mesh_path.split(os.path.sep)[-1].split('.')[0]
-    plt.title('Mesh: ' + mesh_name)
-    plt.show()
-    '''
-    return np.vstack(matrices)
 
 def randomize_pose(frame_work2cam, base_offset=0., offset_mag=0.01,
                    local_rot=None, global_rot=None, min_dist=0.4):
-    """Computes a random offset for the camera using initial gripper pose."""
+    """Computes a random pose for a camera by varying position + orientation.
+
+    Given an initial frame of a camera WRT workspace, we choose a random offset
+    along the local z-direction according to offset_mag. For local and global_rot,
+    we choose random (x,y,z) angles between the ranges given.
+    """
 
     if frame_work2cam is None:
         frame = np.eye(4)
@@ -191,23 +71,31 @@ def randomize_pose(frame_work2cam, base_offset=0., offset_mag=0.01,
     translation_ht[:, 3] = np.array([0, 0, offset, 1])
     translation_ht = np.dot(frame, translation_ht)
 
-    # Calculate global & ocal camera rotations using quaternion math
-    if local_rot is None:
-        local_ht = np.eye(4)
-    else:
-        local_ht = spherical_rotate(local_rot)
+    # Calculate local & global rotations using quaternion math
+    local_ht = np.eye(4) if local_rot is None else spherical_rotate(local_rot)
+    global_ht = np.eye(4) if global_rot is None else spherical_rotate(global_rot)
 
-    if global_rot is None:
-        global_ht = np.eye(4)
-    else:
-        global_ht = spherical_rotate(global_rot)
-
+    # Compute the new camera frame & limit the camera's z-pos to be a minimum dist
     randomized_ht = np.dot(np.dot(global_ht, translation_ht), local_ht)
-
-    # Limit the cameras z-position to be a minimum distance above table.
     randomized_ht[2, 3] = np.maximum(randomized_ht[2, 3], min_dist)
 
     return randomized_ht[:3].flatten()
+
+
+def decode_images(float_string, near_clip, far_clip, res_x=128, res_y=128):
+    """Decodes a float string containing Depth, RGB, and binary mask info."""
+
+    images = np.asarray(float_string)
+
+    depth = images[:res_x*res_y].reshape(res_y, res_x, 1)
+    depth = near_clip + depth*(far_clip - near_clip)
+
+    rgb = images[res_x*res_y:4*res_x*res_y].reshape(res_y, res_x, 3)
+    mask = images[4*res_x*res_y:].reshape(res_y, res_x, 3)
+
+    # The image rows are inverted from what the camera sees in simulator
+    images = np.float32(np.concatenate([rgb, depth, mask], axis=2))[::-1]
+    return images[np.newaxis].transpose(0, 3, 1, 2)
 
 
 def spawn_simulation(port, vrep_path, scene_path):
@@ -273,7 +161,7 @@ class SimulatorInterface(object):
         return clientID
 
     def _islistening(self):
-        """Checks whether VREP is listening on a port already or not.
+        """Checks whether a program is listening on a port already or not.
 
         Currently only works with Linux.
         """
@@ -303,40 +191,22 @@ class SimulatorInterface(object):
         vrep.simxSynchronous(self.clientID, False)
         vrep.simxClearStringSignal(self.clientID, 'grasp_candidate', vrep.simx_opmode_oneshot)
 
-    @staticmethod
-    def decode_images(float_string, near_clip, far_clip, res_x=128, res_y=128):
-        """Decodes a float string containing Depth, RGB, and binary mask info."""
-
-        images = np.asarray(float_string)
-
-        depth = images[:res_x*res_y].reshape(res_y, res_x, 1)
-        depth = near_clip + depth*(far_clip - near_clip)
-
-        rgb = images[res_x*res_y : 4*res_x*res_y].reshape(res_y, res_x, 3)
-        mask = images[4*res_x*res_y:].reshape(res_y, res_x, 3)
-
-        # The image rows are inverted from what the camera sees in simulator
-        images = np.concatenate([rgb, depth, mask], axis=2).astype(np.float32)
-        return images[::-1].transpose(2, 0, 1)
-
-    def isconnected(self):
-        pass
-
-    def isrunning(self):
-        pass
-
-    def end(self):
-        vrep.simxFinish(self.clientID)
-
     def query(self, frame_work2cam, frame_world2work,  grasp,
               base_offset=-0.4, offset_mag=0.15, local_rot=(10, 10, 10),
               global_rot=(30, 30, 30), resolution=256, rgb_near_clip=0.2,
               rgb_far_clip=10.0, depth_far_clip=1.25, depth_near_clip=0.1,
-              p_light_off=0.25, p_light_mag=0.1, camera_fov=1.2217,
+              p_light_off=0.25, p_light_mag=0.1, camera_fov=70*np.pi/180.,
               reorient_up=True, randomize=True,
-              texture_path='C:/Users/Matt/Documents/grasping-multi-view/texture.png',
-              ):
-        """Queries the simulator for an image using a random camera pose."""
+              texture_path=os.path.join(project_dir, 'texture.png')):
+        """Queries the simulator for an image using a camera post WRT workspace.
+
+        The parameters in the signature help define those needed for performing
+        domain randomization. Given a camera pose, the simulator samples:
+        1. Random light positions
+        2. Random number of lights
+        3. Object texture / colour
+        4. Workspace texture
+        """
 
         # Randomize the camera pose by sampling an offset, local, and global rot
         if randomize:
@@ -368,12 +238,11 @@ class SimulatorInterface(object):
              vrep.sim_scripttype_childscript, 'queryCamera', in_ints,
              in_floats, in_strings, emptyBuff, vrep.simx_opmode_blocking)
 
-        if r[0] != 0 :
+        if r[0] != vrep.simx_return_ok:
             return None, None, None
 
         images = self.decode_images(r[2], depth_near_clip, depth_far_clip,
                                     res_x=resolution, res_y=resolution)
-        images = images[np.newaxis]
 
         # Change the grasp pose to be in the new camera frame
         frame_work2cam_ht = lib.utils.format_htmatrix(frame_work2cam)
@@ -383,6 +252,13 @@ class SimulatorInterface(object):
         return grasp, images, frame_work2cam_ht
 
     def view_grasp(self, frame_world2work, frame_work2cam, grasp_wrt_cam, reset_container=0):
+        """Plots the contact positions and normals of a grasp WRT camera frame.
+
+        This function first converts the grasp from the camera frame to workspace
+        frame, then plots the contact positions and normals. This function
+        signature is like this to quickly accomodate grasp predictions made
+        by machine learning / neural nets predicting WRT a visual image.
+        """
 
         # Prepare the inputs; we give it both a camera and object pose
         in_floats = frame_world2work.tolist()
@@ -399,6 +275,11 @@ class SimulatorInterface(object):
         return r
 
     def load_object(self, object_path, com, mass, inertia):
+        """Loads an object into the simulator given it's full path.
+
+        This function also sets the initial center of mass, mass, and
+        inertia of the object.
+        """
 
         in_floats = []
         in_floats.extend(com)
@@ -410,10 +291,11 @@ class SimulatorInterface(object):
              vrep.sim_scripttype_childscript, 'loadObject', [],
              in_floats, [object_path], emptyBuff, vrep.simx_opmode_blocking)
 
-        if r[0] != 0:
+        if r[0] != vrep.simx_return_ok:
             raise Exception('Error loading object!')
 
     def set_object_pose(self, frame_work2obj):
+        """Sets the pose for the current object to be WRT the workspace frame."""
 
         if not isinstance(frame_work2obj, list):
             frame_work2obj = frame_work2obj.tolist()
@@ -423,63 +305,211 @@ class SimulatorInterface(object):
              vrep.sim_scripttype_childscript, 'setObjectPose', [],
              frame_work2obj, [], emptyBuff, vrep.simx_opmode_blocking)
 
-        if r[0] != 0:
+        if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting object pose!')
 
     def get_object_pose(self):
+        """Queries the simulator for current object pose WRT the workspace."""
 
         emptyBuff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
              vrep.sim_scripttype_childscript, 'getObjectPose', [],
              [], [], emptyBuff, vrep.simx_opmode_blocking)
 
-        if r[0] != 0:
+        if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting object pose!')
-        return r[2] # floats
+        return format_htmatrix(np.asarray(r[2]))
 
-    def run_candidate(self, frame_work2palm):
+    def run_threaded_drop(self, frame_work2obj):
+        """Gets an initial object pose by 'dropping' it WRT frame_work2obj.
+
+        This function launches a threaded script that sets an object position,
+        enables the object to be dynamically simulated, and allows it to fall
+        to the ground and come to a resting pose. This is usually the first
+        step when collecting grasps.
+        """
+
+        if not isinstance(frame_work2obj, list):
+            frame_work2obj = frame_work2obj.tolist()
+
+        vrep.simxClearStringSignal(self.clientID, 'object_resting',
+                                   vrep.simx_opmode_oneshot)
+
+        # Launch the threaded script
+        vrep.simxSetStringSignal(self.clientID, 'drop_object',
+                                 vrep.simxPackFloats(frame_work2obj),
+                                 vrep.simx_opmode_oneshot)
+
+        r = -1
+        while r != vrep.simx_return_ok:
+            r, success = vrep.simxGetIntegerSignal(
+                self.clientID, 'object_resting', vrep.simx_opmode_oneshot_wait)
+        if success == 0:
+            raise Exception('Error dropping object!')
+
+    def run_threaded_candidate(self, frame_work2palm):
+        """Launches a threaded scrip in simulator that tests a grasp candidate.
+
+        If the initial grasp has all three fingers touching the objects, then
+        values for the pre- and post-grasp will be returned. Otherwise, a {-1}
+        will be returned (grasp was attempted, but initial fingers weren't in
+        contact with the object).
+        """
 
         if not isinstance(frame_work2palm, list):
             frame_work2palm = frame_work2palm.tolist()
 
-        for signal in ['header', 'pregrasp', 'postgrasp']:
-            vrep.simxClearStringSignal(self.clientID, signal, vrep.simx_opmode_oneshot)
+        # The simulator is going to send these signals back to us, so clear them
+        # to make sure we're not accidentally reading old values
+        signals = ['header', 'pregrasp', 'postgrasp']
+        for s in signals:
+            vrep.simxClearStringSignal(self.clientID, s, vrep.simx_opmode_oneshot)
 
-        # Launch the threaded app
-        vals = vrep.simxPackFloats(frame_work2palm)
-        vrep.simxSetStringSignal(self.clientID, 'grasp_candidate', vals, vrep.simx_opmode_oneshot)
+        # Launch the threaded script
+        vrep.simxSetStringSignal(self.clientID, 'grasp_candidate',
+                                 vrep.simxPackFloats(frame_work2palm),
+                                 vrep.simx_opmode_oneshot)
 
-        r, header = vrep.simxGetStringSignal(self.clientID,'header', vrep.simx_opmode_oneshot_wait)
-        while r != vrep.simx_return_ok:
-            r, header = vrep.simxGetStringSignal(self.clientID,'header', vrep.simx_opmode_oneshot_wait)
+        data = {}
+        for s in signals:
+            # Wait for the simulation to return each specific signal
+            r = -1
+            while r != vrep.simx_return_ok:
+                r, data[s] = vrep.simxGetStringSignal(self.clientID, s, vrep.simx_opmode_oneshot_wait)
 
-        r, pregrasp = vrep.simxGetStringSignal(self.clientID,'pregrasp', vrep.simx_opmode_oneshot_wait)
-        while r != vrep.simx_return_ok:
-            r, pregrasp = vrep.simxGetStringSignal(self.clientID,'pregrasp', vrep.simx_opmode_oneshot_wait)
-
-        r, postgrasp = vrep.simxGetStringSignal(self.clientID,'postgrasp', vrep.simx_opmode_oneshot_wait)
-        while r != vrep.simx_return_ok:
-            r, postgrasp = vrep.simxGetStringSignal(self.clientID,'postgrasp', vrep.simx_opmode_oneshot_wait)
-
-        for signal in ['header', 'pregrasp', 'postgrasp']:
-            vrep.simxClearStringSignal(self.clientID, signal, vrep.simx_opmode_oneshot)
-
-        header = header.lstrip('{').rstrip('}')
+        # Decode the results into a dictionary
+        header = data['header'].lstrip('{').rstrip('}')
         if header == '-1':
             return None, None
-        pregrasp = parse_grasp(vrep.simxUnpackFloats(pregrasp), header)
-        postgrasp = parse_grasp(vrep.simxUnpackFloats(postgrasp), header)
+        pregrasp = parse_grasp(vrep.simxUnpackFloats(data['pregrasp']), header)
+        postgrasp = parse_grasp(vrep.simxUnpackFloats(data['postgrasp']), header)
 
         return pregrasp, postgrasp
 
     def start(self):
         pass
 
+    def isconnected(self):
+        pass
 
+    def isrunning(self):
+        pass
+
+    def end(self):
+        vrep.simxFinish(self.clientID)
+
+
+
+def candidates(mesh_name, port=19999):
+
+    import h5py
+    import utils
+    import sys
+    sys.path.append('..')
+    from lib.python_config import (config_simulation_path,
+                                   config_mesh_dir,
+                                   config_processed_data_dir)
+
+    sim = SimulatorInterface(port=port)
+
+
+    # Where we'll save all our data to
+    if not os.path.exists(config_processed_data_dir):
+        os.makedirs(config_processed_data_dir)
+
+    save_path = os.path.join(config_processed_data_dir, mesh_name)
+    datafile = h5py.File(save_path, 'w')
+    pregrasp_group = datafile.create_group('pregrasp')
+    postgrasp_group = datafile.create_group('postgrasp')
+
+    # Load the mesh from file, so we can compute grasp candidates, and access
+    # information such as the center of mass & inertia
+    object_path = os.path.join(config_mesh_dir, mesh_name)
+    mesh = load_mesh(object_path)
+
+    mass = 1
+    com = mesh.mass_properties['center_mass']
+    inertia = mesh.mass_properties['inertia'].flatten()
+
+    candidates = generate_candidates(mesh, num_samples=1000,
+                                     noise_level=0.05,
+                                     gripper_offset=-0.07)
+
+    # Load the object into the sim & set pose
+    sim.load_object(object_path, com, mass, inertia*10)
+
+    pose = sim.get_object_pose()
+    pose[:3, 3] = [0, 0, 0.5]
+
+    sim.run_threaded_drop(pose[:3].flatten())
+
+
+    pose = sim.get_object_pose()
+
+    count = 1
+    for row in candidates:
+
+        mult = np.dot(pose, format_htmatrix(row))
+
+        direction = np.dot(mult[:3, :3], np.atleast_2d([0, 0, 1]).T)
+        if direction[2] * 10 > 0.:
+            continue
+
+        print 'Setting object pose!'
+        sim.set_object_pose(pose[:3].flatten())
+
+        print 'Attempting grasp'
+        pregrasp, postgrasp = sim.run_threaded_candidate(mult[:3].flatten())
+
+        if pregrasp is None or postgrasp is None:
+            continue
+
+        print 'all_in_contact?: ', postgrasp['all_in_contact']
+        if not postgrasp['all_in_contact']:
+            continue
+
+
+        if len(pregrasp_group) == 0:
+            for key, val in pregrasp.iteritems():
+                pregrasp_group.create_dataset(key, val.shape, maxshape=(None, val.shape[1]))
+        if len(postgrasp_group) == 0:
+            for key, val in postgrasp.iteritems():
+                postgrasp_group.create_dataset(key, val.shape, maxshape=(None, val.shape[1]))
+
+        for key, val in pregrasp.iteritems():
+            pregrasp_group.resize(key, (count, val.shape[1]))
+            pregrasp_group[count+1] = val
+
+        for key, val in postgrasp.iteritems():
+            postgrasp_group.resize(key, (count, val.shape[1]))
+            postgrasp_group[count+1] = val
+
+    datafile.close()
 
 
 
 if __name__ == '__main__':
+    import h5py
+    import utils
+    import sys
+    sys.path.append('..')
+    from lib.python_config import (config_simulation_path,
+                                   config_mesh_dir, config_processed_data_dir)
+    meshes = os.listdir(config_mesh_dir)
+
+    candidates('dumpbell_poisson_001.stl')
+    sys.exit(1)
+
+
+
+    def find_name(to_find):
+        from lib.python_config import config_mesh_dir
+
+        meshes = os.listdir(config_mesh_dir)
+        for mesh_name in meshes:
+            if str(to_find) in mesh_name:
+                return mesh_name.split('.')[0]
+        return None
 
     import h5py
     import utils
@@ -505,47 +535,15 @@ if __name__ == '__main__':
         object_name = find_name(props['object_name'][i, 0]) + '.stl'
         object_path = os.path.join(config_mesh_dir, object_name)
 
-        sim.load_object(object_path, com, mass, inertia)
+        sim.load_object(object_path, com, mass, inertia * 10)
 
         sim.set_object_pose(props['frame_work2obj'][i])
 
-        sim.query(props['frame_work2palm'][i], props['frame_world2work'][i], grasps[i])
+        #sim.query(props['frame_work2palm'][i], props['frame_world2work'][i], grasps[i])
 
         sim.view_grasp(props['frame_world2work'][i],
                        props['frame_work2cam'][i],
                        grasps[i], reset_container=1)
-        pregrasp, postgrasp = sim.run_candidate(props['frame_work2palm'][i])
+        pregrasp, postgrasp = sim.run_threaded_candidate(props['frame_work2palm'][i])
         if pregrasp is None or postgrasp is None:
             continue
-
-
-        '''
-        candidates = generate_candidates(object_path, num_samples=1000,
-                                         noise_level=0.05,
-                                         gripper_offset=-0.15)
-
-        pose = format_htmatrix(np.asarray(sim.get_object_pose()))
-        for count, row in enumerate(candidates):
-
-            mult = np.dot(pose, format_htmatrix(row))
-
-            direction = np.dot(mult[:3, :3], np.atleast_2d([0, 0, 1]).T)
-            if direction[2] * 10 <= 0.:
-                continue
-            print count
-
-            print 'Attempting grasp'
-            header, pregrasp, postgrasp = sim.run_candidate(row)
-
-            if header == '-1':
-                continue
-
-            from decode import parse_grasp, decode_grasp
-            parsed = parse_grasp(pregrasp, header)
-            decoded = decode_grasp(parsed)
-
-            print 'Attempting original grasp'
-            header, pregrasp, postgrasp = sim.run_candidate(decoded['frame_work2palm'][i])
-
-            time.sleep(5)
-        '''

@@ -76,13 +76,6 @@ def decode_grasp(grasp_line):
     elif grasp_line['num_objects_colliding'] != 0:
         return None
 
-    # Check that the force sensor was active for this trial
-    fs0 = grasp_line['forceSensorStatus0']
-    fs1 = grasp_line['forceSensorStatus1']
-    fs2 = grasp_line['forceSensorStatus2']
-    if fs0 != 1 or fs1 != 1 or fs2 != 1:
-        raise Exception('Force sensor was broken. Should not have happened.')
-
     # Contact points, normals, and forces should be WRT world frame
     contact_points = np.hstack(
         [grasp_line['contactPoint0_wrt_world'],
@@ -144,93 +137,6 @@ def decode_grasp(grasp_line):
             'frame_world2work':world2work,
             'frame_work2obj':work2obj,
             }
-
-
-def decode_raw_data(all_data):
-    """Primary function that decodes collected simulated data."""
-
-    # Initialize elements to be None
-    # Note that "OTO" means the image and gripper share a one-to-one mapping
-    # Note that "OTM" means the image and gripper share a one-to-many mapping
-    keys = ['header', 'pregrasp', 'postgrasp']
-
-    # We need to set these to be None, or else (as a list) they share memory
-    decoded = {key: list() for key in keys}
-    elems = dict.fromkeys(keys, None)
-
-
-    # ---------------- Loop through all recorded data ------------------------
-
-    count = 0 # which attempt
-    successful = 0 # how many successful attempts
-    for i, line in enumerate(all_data):
-
-        # First item of a line is always what the line represents
-        # (e.g. an image/grasp/header)
-        data_type = line[0]
-        data = line[1:-1]
-
-
-
-        # No prefix inficates that image y-direction always points upwards
-        if data_type == 'HEADER':
-            elems['header'] = data
-
-        elif data_type == 'PREGRASP':
-            grasp = parse_grasp(data, elems['header'])
-            preg = decode_grasp(grasp)
-            elems['pregrasp'] = preg
-
-        elif data_type == 'POSTGRASP':
-            grasp = parse_grasp(data, elems['header'])
-            postg = decode_grasp(grasp)
-            elems['postgrasp'] = postg
-
-            # Check we've retrieved an element for each component
-            # This is where we'll catch whether or not the grasp was
-            #   successful, as the 'postgrasp' should not be None
-            count += 1
-            if all(elems[k] is not None for k in keys):
-
-                for k in elems.keys():
-                    if 'header' not in k:
-                        decoded[k].append(elems[k])
-
-                successful += 1
-                if successful % 50 == 0:
-                    print 'Successful grasp #%4d/%4d'%(successful, count)
-
-            # Reset the elements to be None
-            elems.update(dict.fromkeys(elems.keys(), None))
-        else:
-            raise Exception('Data type: %s not understood'%data_type)
-
-
-    # Quick check to see that we've decoded something
-    if len(decoded['pregrasp']) == 0:
-        return False
-
-    # Go through the collected pregrasp/postgrasp arrays, and combine each of
-    # the elements that share the same header together
-    pregrasp_dict = {}
-    postgrasp_dict = {}
-    grasps = zip(decoded['pregrasp'], decoded['postgrasp'])
-
-    for i, (pregrasp, postgrasp) in enumerate(grasps):
-
-        # Allocate a matrix for pregrasp + postgrasp
-        if i == 0:
-            for key in pregrasp.keys():
-                key_size = pregrasp[key].shape[1]
-                pregrasp_dict[key] = np.empty((len(grasps), key_size))
-                postgrasp_dict[key] = np.empty((len(grasps), key_size))
-
-        # fill it
-        for key in pregrasp.keys():
-            pregrasp_dict[key][i] = pregrasp[key]
-            postgrasp_dict[key][i] = postgrasp[key]
-
-    return {'pregrasp':pregrasp_dict, 'postgrasp':postgrasp_dict}
 
 
 def postprocess(data, object_name):
