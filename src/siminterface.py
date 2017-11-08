@@ -9,7 +9,7 @@ import trimesh.transformations as tf
 
 import lib
 import lib.utils
-from lib.python_config import project_dir
+from lib.python_config import project_dir, config_simulation_path
 import vrep
 vrep.simxFinish(-1)
 
@@ -170,7 +170,7 @@ class SimulatorInterface(object):
         # process running the simulator scene
         if platform in ['linux', 'linux2'] and not self._islistening():
             if scene_path is None:
-                scene_path = os.path.join('..', 'scenes', 'collect_multiview_grasps.ttt')
+                scene_path = config_simulation_path
             if not os.path.exists(scene_path):
                 raise Exception('Scene path <%s> not found. Is this right?'%scene_path)
 

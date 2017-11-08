@@ -11,7 +11,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 import lib.utils
-from lib.python_config import (config_mesh_dir, config_processed_data_dir)
+from lib.python_config import (config_mesh_dir, config_collected_data_dir)
 
 import siminterface
 
@@ -131,13 +131,13 @@ def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5,
     sim = siminterface.SimulatorInterface(port=port)
 
     # Get the paths & structures set up for saving results
-    if not os.path.exists(config_processed_data_dir):
-        os.makedirs(config_processed_data_dir)
+    if not os.path.exists(config_collected_data_dir):
+        os.makedirs(config_collected_data_dir)
 
     mesh_name = mesh_path.split(os.path.sep)[-1]
 
     output_file = mesh_name.split('.')[0] + '.hdf5'
-    save_path = os.path.join(config_processed_data_dir, output_file)
+    save_path = os.path.join(config_collected_data_dir, output_file)
 
     datafile = h5py.File(save_path, 'w')
     pregrasp_group = datafile.create_group('pregrasp')
