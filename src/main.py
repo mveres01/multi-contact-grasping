@@ -166,7 +166,9 @@ def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5):
     pose = sim.get_object_pose()
 
     num_successful_grasps = 0
-    for row in candidates:
+    for count, row in enumerate(candidates):
+
+        print('Evaluating grasp %d/%d for object: %s'%(count, len(candidates), mesh_name))
 
         work2candidate = np.dot(pose, lib.utils.format_htmatrix(row))
 
