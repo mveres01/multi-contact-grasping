@@ -95,7 +95,9 @@ def normalize_vector(vector):
 def format_htmatrix(matrix_in):
     """Formats a 3x3 rotation matrix into a 4x4 homogeneous matrix."""
 
-    if matrix_in.ndim == 1:
+    if isinstance(matrix_in, list):
+        matrix_in = np.asarray(matrix_in).reshape(3, 4)
+    elif matrix_in.ndim == 1:
         matrix_in = matrix_in.reshape(3, 4)
 
     ht_matrix = np.eye(4)

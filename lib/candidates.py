@@ -147,7 +147,6 @@ def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5):
     pregrasp_group = datafile.create_group('pregrasp')
     postgrasp_group = datafile.create_group('postgrasp')
 
-
     # Load the mesh from file, so we can compute grasp candidates, and access
     # information such as the center of mass & inertia
     mesh = load_mesh(mesh_path)
@@ -155,7 +154,7 @@ def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5):
     inertia = mesh.mass_properties['inertia'].flatten()
 
     candidates = generate_candidates(mesh, num_samples=1000,
-                                     noise_level=0.05,
+                                     noise_level=0.0,
                                      gripper_offset=-0.07)
 
     # Load the object into the sim & specify initial properties.
@@ -167,15 +166,21 @@ def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5):
 
     pose[:3, 3] = [0, 0, initial_height]
 
-    sim.run_threaded_drop(pose[:3].flatten())
+    sim.run_threaded_drop(pose)
 
     # Reset the object on each grasp attempt to its resting pose. Note this
     # doesn't have to be done, but it avoids instances where the object may
     # subsequently have fallen off the table
-    pose = sim.get_object_pose()
+    pose = lib.utils.format_htmatrix(sim.get_object_pose())
+
+
+    sim.stop()
+    return
+
 
     num_successful_grasps = 0
     for row in candidates:
+
 
         mult = np.dot(pose, lib.utils.format_htmatrix(row))
 
@@ -187,7 +192,12 @@ def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5):
         sim.set_object_pose(pose[:3].flatten())
 
         #print 'Setting gripper pose!'
-        sim.set_gripper_pose(mult[:3].flatten())
+        # We can randomize the gripper candidate by rotating or translating
+        mult = queryclass.randomize_pose(mult, 0., 0.02, local_rot=(0, 0, 359))
+
+        sim.set_gripper_pose(mult)
+
+
 
         #print 'Attempting grasp'
         pregrasp, postgrasp = sim.run_threaded_candidate()
@@ -220,7 +230,10 @@ if __name__ == '__main__':
 
     if len(sys.argv) == 1:
         meshes = os.listdir(config_mesh_dir)
-        collect_grasps(os.path.join(config_mesh_dir, 'watering_can_poisson_003.stl'))
+        #collect_grasps(os.path.join(config_mesh_dir, 'watering_can_poisson_003.stl'))
+
+        for m in meshes:
+            collect_grasps(os.path.join(config_mesh_dir, m), 19997)
     else:
         port = sys.argv[1]
         mesh = sys.argv[2]

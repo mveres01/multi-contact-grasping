@@ -1,30 +1,24 @@
 import os
 import sys
 sys.path.append('..')
-
+from sys import platform
 import subprocess
-import csv
-import argparse
 import time
-import h5py
 import numpy as np
-import trimesh
 import trimesh.transformations as tf
 import vrep
-vrep.simxFinish(-1)
-
 import lib
 import lib.utils
 from lib.utils import format_htmatrix
 from lib.python_config import project_dir
-
-from sys import platform
+vrep.simxFinish(-1)
 
 def wait_for_signal(clientID, signal, mode=vrep.simx_opmode_oneshot_wait):
     r = -1
     while r != vrep.simx_return_ok:
         r, data = vrep.simxGetStringSignal(clientID, signal, mode)
     return data
+
 
 def rand_step(max_angle):
     """Returns a random point between (-max_angle, max_angle) in radians."""
@@ -52,7 +46,7 @@ def spherical_rotate(max_rot_degrees):
 
 
 def randomize_pose(frame_work2pose, base_offset=0., offset_mag=0.01,
-                   local_rot=None, global_rot=None, min_dist=0.4):
+                   local_rot=None, global_rot=None, min_dist=None):
     """Computes a random pose for any frame by varying position + orientation.
 
     Given an initial frame of WRT the workspace, we choose a random offset
@@ -63,6 +57,8 @@ def randomize_pose(frame_work2pose, base_offset=0., offset_mag=0.01,
 
     if frame_work2pose is None:
         frame = np.eye(4)
+    elif isinstance(frame_work2pose, list):
+        frame = lib.utils.format_htmatrix(frame_work2pose)
     elif frame_work2pose.ndim == 1:
         frame = lib.utils.format_htmatrix(frame_work2pose)
     else:
@@ -83,8 +79,8 @@ def randomize_pose(frame_work2pose, base_offset=0., offset_mag=0.01,
 
     # Compute new frame & limit the z-pos to be a minimum height above workspace
     randomized_ht = np.dot(np.dot(global_ht, translation_ht), local_ht)
-    randomized_ht[2, 3] = np.maximum(randomized_ht[2, 3], min_dist)
-
+    if min_dist is not None:
+        randomized_ht[2, 3] = np.maximum(randomized_ht[2, 3], min_dist)
     return randomized_ht[:3].flatten()
 
 
@@ -126,7 +122,7 @@ def parse_grasp(header, line):
 
         try:
             subset = subset.astype(np.float32)
-        except Exception as e:
+        except Exception:
             subset = subset.astype(str)
 
         grasp[name] = subset.ravel()
@@ -137,8 +133,9 @@ def spawn_simulation(port, vrep_path, scene_path):
     """Spawns a child process using screen and starts a remote VREP server."""
 
     if platform not in ['linux', 'linux2']:
-        print('Must be running on Linux to use this function.')
-        return False
+        raise Exception('Must be running on Linux to spawn a simulation.')
+
+    vrep_path = 'vrep' if vrep_path is None else vrep_path
 
     # Command to launch VREP
     vrep_cmd = '%s -h -q -s -gREMOTEAPISERVERSERVICE_%d_FALSE_TRUE %s'% \
@@ -168,22 +165,20 @@ class SimulatorInterface(object):
         # If we're running linux, we can try automatically spawning a child
         # process running the simulator scene
         if platform in ['linux', 'linux2'] and not self._islistening():
-            if vrep_path is None:
-                print('VREP is not currently running and/or is not listening on '\
-                      'port <%s>. To spawn automatically, specify :param: ' \
-                      'vrep_path, which is the path to the VREP exe.'%self.port)
-                return
             if scene_path is None:
-                scene_path = os.path.append('..','scenes','collect_multiview_grasps.ttt')
+                scene_path = os.path.append('..', 'scenes', 'collect_multiview_grasps.ttt')
             if not os.path.exists(scene_path):
                 raise Exception('Scene path <%s> not found. Is this right?'%scene_path)
+
             spawn_simulation(self.port, vrep_path, scene_path)
 
+        # Try starting communication
         self.clientID = self._connect()
 
         # Tell the scene to start running
         self._start()
 
+        # Remove All previous signals in the scene
         self._clear_signals()
 
     def _clear_signals(self, mode=vrep.simx_opmode_oneshot):
@@ -196,11 +191,14 @@ class SimulatorInterface(object):
         vrep.simxClearStringSignal(self.clientID, 'pregrasp', mode)
         vrep.simxClearStringSignal(self.clientID, 'postgrasp', mode)
 
-    def _connect(self):
-        r = vrep.simxStopSimulation(-1, vrep.simx_opmode_oneshot_wait)
+    def _connect(self, wait_until_connected=True,
+                 do_not_reconnect_once_disconnected=False,
+                 time_out_in_ms=5000, comm_thread_cycle_in_ms=5):
 
         # Start communication thread
-        clientID = vrep.simxStart(self.ip, self.port, True, False, 5000, 5)
+        clientID = vrep.simxStart(self.ip, self.port, wait_until_connected,
+                                  do_not_reconnect_once_disconnected, time_out_in_ms,
+                                  comm_thread_cycle_in_ms)
         if clientID == -1:
             raise Exception('Unable to connect to address <%s> on port <%d>. ' \
                             'Check that the simulator is currently running.'%\
@@ -215,12 +213,26 @@ class SimulatorInterface(object):
 
         # Get a list of all current open / connected ports
         try:
-            netstat = subprocess.Popen(['netstat','-nao'], stdout=subprocess.PIPE)
+            netstat = subprocess.Popen(['netstat', '-nao'], stdout=subprocess.PIPE)
         except Exception as e:
             raise e
         ports = netstat.communicate()[0]
 
         return self.ip + ':' + str(self.port) in ports
+
+    @staticmethod
+    def _format_matrix(matrix_in):
+        """Formats input matrices to V-REP as a lists of 12 components."""
+
+        if len(matrix_in) not in [12, 16]:
+            raise Exception('Length of input matrix must be either [12, 16]')
+
+        matrix = matrix_in
+        if not isinstance(matrix, np.ndarray):
+            matrix = np.asarray(matrix)
+        matrix_ht = matrix.reshape(len(matrix) // 4, 4)
+
+        return matrix_ht[:3].flatten().tolist()
 
     def _start(self):
         """Tells a VREP scene to start execution."""
@@ -244,62 +256,45 @@ class SimulatorInterface(object):
 
         if '.obj' in object_path:
             file_format = 0
-        elif '.dxf' in object_path:
-            file_format = 1
-        elif '.3ds' in object_path:
-            file_format = 2
         elif '.stl' in object_path: # 3 is regular stl, 4 is binary stl & default
             file_format = 4
+        else:
+            raise Exception('File format must be in [.obj, .stl]')
 
         in_floats = []
         in_floats.extend(com)
         in_floats.extend([mass])
         in_floats.extend(inertia)
 
-        emptyBuff = bytearray()
+        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
              vrep.sim_scripttype_childscript, 'loadObject', [file_format],
-             in_floats, [object_path], emptyBuff, vrep.simx_opmode_blocking)
+             in_floats, [object_path], empty_buff, vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error loading object!')
 
     def set_object_pose(self, frame_work2obj):
         """Sets the pose for the current object to be WRT the workspace frame."""
-
-        if not isinstance(frame_work2obj, list):
-            frame_work2obj = frame_work2obj.tolist()
-
-        emptyBuff = bytearray()
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'setObjectPose', [],
-             frame_work2obj, [], emptyBuff, vrep.simx_opmode_blocking)
-
-        if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting object pose!')
+        return self.set_pose_by_name('object', frame_work2obj)
 
     def get_object_pose(self):
         """Queries the simulator for current object pose WRT the workspace."""
-
-        emptyBuff = bytearray()
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'getObjectPose', [],
-             [], [], emptyBuff, vrep.simx_opmode_blocking)
-
-        if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting object pose!')
-        return format_htmatrix(np.asarray(r[2]))
+        return self.get_pose_by_name('object')
 
     def set_gripper_pose(self, frame_work2palm):
-        """Sets the pose for the current object to be WRT the workspace frame."""
+        """Sets the pose for the current object to be WRT the workspace frame.
 
-        if not isinstance(frame_work2palm, list):
-            frame_work2palm = frame_work2palm.tolist()
+        Setting gripper pose is a bit more intricate then the others, as since
+        it's a dynamic object,
+        """
 
-        emptyBuff = bytearray()
+        frame = self._format_matrix(frame_work2palm)
+
+        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
              vrep.sim_scripttype_childscript, 'setGripperPose', [],
-             frame_work2palm, [], emptyBuff, vrep.simx_opmode_blocking)
+             frame, [], empty_buff, vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting gripper pose!')
@@ -307,13 +302,13 @@ class SimulatorInterface(object):
     def set_pose_by_name(self, name, frame_work2pose):
         """Given a name of an object in the scene, set pose WRT to workspace."""
 
-        if not isinstance(frame_work2pose, list):
-            frame_work2pose = frame_work2pose.tolist()
+        frame = self._format_matrix(frame_work2pose)
+        print name, len(frame)
 
-        emptyBuff = bytearray()
+        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
              vrep.sim_scripttype_childscript, 'setPoseByName', [],
-             frame_work2pose, [name], emptyBuff, vrep.simx_opmode_blocking)
+             frame, [name], empty_buff, vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting pose for name <%s>!'%name)
@@ -324,22 +319,21 @@ class SimulatorInterface(object):
         The retrieved pose is with respect to the workspace frame.
         """
 
-        emptyBuff = bytearray()
+        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
              vrep.sim_scripttype_childscript, 'getPoseByName', [],
-             [], [name], emptyBuff, vrep.simx_opmode_blocking)
+             [], [name], empty_buff, vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error getting pose for name <%s>!'%name)
-        return r[2]
+        return lib.utils.format_htmatrix(r[2])
 
     def query(self, frame_work2cam, frame_world2work,
-              base_offset=-0.4, offset_mag=0.15, local_rot=(10, 10, 10),
-              global_rot=(30, 30, 30), resolution=256, rgb_near_clip=0.2,
-              rgb_far_clip=10.0, depth_far_clip=1.25, depth_near_clip=0.1,
-              p_light_off=0.25, p_light_mag=0.1, camera_fov=70*np.pi/180.,
-              reorient_up=True, randomize_frame=True, randomize_texture=True,
-              randomize_colour=True, randomize_lighting=True,
+              resolution=128, rgb_near_clip=0.2, rgb_far_clip=10.0,
+              depth_far_clip=1.25, depth_near_clip=0.1, p_light_off=0.25,
+              p_light_mag=0.1, camera_fov=70*np.pi/180., reorient_up=True,
+              randomize_texture=True, randomize_colour=True,
+              randomize_lighting=True,
               texture_path=os.path.join(project_dir, 'texture.png')):
         """Queries the simulator for an image using a camera post WRT workspace.
 
@@ -351,15 +345,11 @@ class SimulatorInterface(object):
         4. Workspace texture
         """
 
-        # Randomize the camera pose by sampling an offset, local, and global rot
-        if randomize_frame:
-            frame_work2cam = randomize_pose(frame_work2cam, base_offset,
-                                            offset_mag, local_rot, global_rot)
-
         # Force the camera to always be looking "upwards"
         if reorient_up:
             frame_work2cam = lib.utils.reorient_up_direction( \
                 frame_work2cam, frame_world2work, direction_up=[0, 0, 1])
+        frame_work2cam = self._format_matrix(frame_work2cam)
 
         in_ints = [resolution]
         in_ints.extend([int(randomize_texture)])
@@ -367,7 +357,7 @@ class SimulatorInterface(object):
         in_ints.extend([int(randomize_lighting)])
 
         # Prepare the inputs; we give it both a camera and object pose
-        in_floats = frame_work2cam.tolist()
+        in_floats = frame_work2cam[:]
         in_floats.extend([p_light_off])
         in_floats.extend([p_light_mag])
         in_floats.extend([rgb_near_clip])
@@ -379,10 +369,10 @@ class SimulatorInterface(object):
         in_strings = [texture_path]
 
         # Make a call to the simulator
-        emptyBuff = bytearray()
+        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
              vrep.sim_scripttype_childscript, 'queryCamera', in_ints,
-             in_floats, in_strings, emptyBuff, vrep.simx_opmode_blocking)
+             in_floats, in_strings, empty_buff, vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             return None, None, None
@@ -401,23 +391,24 @@ class SimulatorInterface(object):
         to the ground and come to a resting pose. This is usually the first
         step when collecting grasps.
         """
-
-        if not isinstance(frame_work2obj, list):
-            frame_work2obj = frame_work2obj.tolist()
-
         self._clear_signals()
+
+        frame = self._format_matrix(frame_work2obj)
 
         # Launch the threaded script
         vrep.simxSetStringSignal(self.clientID, 'run_drop_object',
-                                 vrep.simxPackFloats(frame_work2obj),
+                                 vrep.simxPackFloats(frame),
                                  vrep.simx_opmode_oneshot)
 
         r = -1
         while r != vrep.simx_return_ok:
             r, success = vrep.simxGetIntegerSignal(
                 self.clientID, 'object_resting', vrep.simx_opmode_oneshot_wait)
+
         if success == 0:
             raise Exception('Error dropping object!')
+        self._clear_signals()
+
 
     def run_threaded_candidate(self, finger_angle=0):
         """Launches a threaded scrip in simulator that tests a grasp candidate.
@@ -440,6 +431,8 @@ class SimulatorInterface(object):
         pregrasp = wait_for_signal(self.clientID, 'pregrasp')
         postgrasp = wait_for_signal(self.clientID, 'postgrasp')
 
+        self._clear_signals()
+
         # Decode the results into a dictionary
         header = header.lstrip('{').rstrip('}')
         if header == '-1':
@@ -458,19 +451,30 @@ class SimulatorInterface(object):
         by machine learning / neural nets predicting WRT a visual image.
         """
 
+        frame_world2work = self._format_matrix(frame_world2work)
+        frame_work2cam = self._format_matrix(frame_work2cam)
+
         # Prepare the inputs; we give it both a camera and object pose
-        in_floats = frame_world2work.tolist()
+        in_floats = frame_world2work[:]
         in_floats.extend(frame_work2cam)
         in_floats.extend(grasp_wrt_cam)
 
         in_ints = [reset_container]
 
         # Make a call to the simulator
-        emptyBuff = bytearray()
+        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
              vrep.sim_scripttype_childscript, 'displayGrasp', in_ints,
-             in_floats, [], emptyBuff, vrep.simx_opmode_blocking)
+             in_floats, [], empty_buff, vrep.simx_opmode_blocking)
+        if r[0] != vrep.simx_return_ok:
+            raise Exception('Error when trying to display grasps in simulator.')
 
+    def stop(self):
+        # Stop simulation
+        vrep.simxStopSimulation(self.clientID, vrep.simx_opmode_blocking)
+
+        # End communication thread
+        vrep.simxFinish(self.clientID)
 
     def start(self):
         pass
@@ -481,12 +485,7 @@ class SimulatorInterface(object):
     def isrunning(self):
         pass
 
-    def end(self):
-        # Stop simulation
-        vrep.simxStopSimulation(self.clientID, vrep.simx_opmode_oneshot)
 
-        # End communication thread
-        vrep.simxFinish(self.clientID)
 
 
 if __name__ == '__main__':
@@ -501,15 +500,12 @@ if __name__ == '__main__':
         return None
 
     import h5py
-    import utils
-    import sys
-    sys.path.append('..')
-    from lib.python_config import config_simulation_path, config_mesh_dir
+    from lib.python_config import config_mesh_dir
 
     GLOBAL_DATAFILE = 'C:/Users/Matt/Documents/grasping-multi-view/learning/valid256.hdf5'
 
+
     sim = SimulatorInterface(port=19999)
-    #sim.end()
 
 
     # Load the data. Note that Grasps are encoded WRT workspace frame
@@ -530,19 +526,49 @@ if __name__ == '__main__':
 
         sim.set_object_pose(props['frame_work2obj'][i])
 
-        images, frame_work2cam_ht = sim.query(props['frame_work2palm'][i],
-                                              props['frame_world2work'][i])
+
+        # Randomize the camera pose by sampling an offset, local, and global rot
+        base_offset = -0.4
+        offset_mag = 0.15
+        local_rot = (10, 10, 10)
+        global_rot = (30, 30, 30)
+
+        frame_work2cam = format_htmatrix(props['frame_work2palm'][i])
+
+        frame_work2cam = randomize_pose(frame_work2cam, base_offset,
+                                        offset_mag, None, None)
+
+        images, frame_work2cam_ht = sim.query(frame_work2cam,
+                                              props['frame_world2work'][i],
+                                              camera_fov=60*np.pi/180.)
 
         frame_cam2work_ht = lib.utils.invert_htmatrix(frame_work2cam_ht)
         grasp = lib.utils.convert_grasp_frame(frame_cam2work_ht, grasps[i])
 
 
+        '''
         sim.view_grasp(props['frame_world2work'][i],
                        props['frame_work2cam'][i],
                        grasps[i], reset_container=1)
+        '''
 
         sim.set_gripper_pose(props['frame_work2palm'][i])
 
         pregrasp, postgrasp = sim.run_threaded_candidate()
         if pregrasp is None or postgrasp is None:
             continue
+
+        grasp = np.hstack([pregrasp['work2contact0'],
+                           pregrasp['work2contact1'],
+                           pregrasp['work2contact2'],
+                           pregrasp['work2normal0'],
+                           pregrasp['work2normal1'],
+                           pregrasp['work2normal2']])
+        grasp = lib.utils.convert_grasp_frame(frame_cam2work_ht, grasp)
+
+
+        sim.view_grasp(props['frame_world2work'][i],
+                       props['frame_work2cam'][i],
+                       grasps[i], reset_container=1)
+        sim.set_object_pose(props['frame_work2obj'][i])
+        #sys.exit(1)
