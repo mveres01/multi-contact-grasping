@@ -1,0 +1,5 @@
+*.stl
+*.ply
+*.pyc
+*.so
+*.exe
