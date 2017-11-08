@@ -444,7 +444,6 @@ if (sim_call_type == sim_childscriptcall_initialization) then
 	simClearStringSignal('grasp_candidate')
 	simClearStringSignal('drop_object')
 
-
 	-- ----------------- SIMULATION OBJECT HANDLES ----------------------------
 	--- All object handles will be prefixed with a 'h_' marker.
 	--- All handles to be used in the simulation will be collected here, and
@@ -588,8 +587,6 @@ if (sim_call_type == sim_childscriptcall_initialization) then
 								(3.1415 * light[3] / 180.)}
 	end
 
-
-
 	-- ------- SAVE HANDLES AS GLOBAL VARIABLES (i.e. as signals) -------------
 
 	simSetIntegerSignal('h_table_object', h_table_object)
@@ -622,5 +619,14 @@ if (sim_call_type == sim_childscriptcall_initialization) then
 	simSetStringSignal('light_default_pos', simPackTable(light_default_pos))
 	simSetStringSignal('light_default_ori', simPackTable(light_default_ori))
 
+
+    -- Check where the data will come from
+    local PORT_NUM = simGetStringParameter(sim_stringparam_app_arg1)
+
+    if PORT_NUM == '' then
+        PORT_NUM = 19999 -- default
+        simExtRemoteApiStart(PORT_NUM)
+    end
+    print('port num: ', PORT_NUM)
 
 end

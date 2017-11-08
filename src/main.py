@@ -123,11 +123,14 @@ def generate_candidates(mesh, num_samples=1000, noise_level=0.05,
     return matrices
 
 
-def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5):
+def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5, 
+                   num_candidates=1000, candidate_noise_level=0.05, 
+                   num_random_per_candidate=5,
+                   candidate_offset=-0.07):
 
     sim = siminterface.SimulatorInterface(port=port)
 
-    # Where we'll save all our data to
+    # Get the paths & structures set up for saving results
     if not os.path.exists(config_processed_data_dir):
         os.makedirs(config_processed_data_dir)
 
@@ -140,87 +143,103 @@ def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5):
     pregrasp_group = datafile.create_group('pregrasp')
     postgrasp_group = datafile.create_group('postgrasp')
 
+
+
     # Load the mesh from file, so we can compute grasp candidates, and access
-    # information such as the center of mass & inertia
+    # properties such as the center of mass & inertia
     mesh = load_mesh(mesh_path)
     com = mesh.mass_properties['center_mass']
     inertia = mesh.mass_properties['inertia'].flatten()
 
-    candidates = generate_candidates(mesh, num_samples=1000,
-                                     noise_level=0.0,
-                                     gripper_offset=-0.07)
+    candidates = generate_candidates(mesh, num_samples=num_candidates,
+                                     noise_level=candidate_noise_level,
+                                     gripper_offset=candidate_offset)
 
     # Load the object into the sim & specify initial properties.
     # With every new mesh, we give it a starting pose at some height above the
     # table, and allow it to fall into a natural resting pose.
     sim.load_object(mesh_path, com, mass, inertia*5)
 
-    pose = sim.get_object_pose()
-    pose[:3, 3] = [0, 0, initial_height]
+    initial_pose = sim.get_object_pose()
+    initial_pose[:3, 3] = [0, 0, initial_height]
 
-    sim.run_threaded_drop(pose)
+    sim.run_threaded_drop(initial_pose)
 
     # Reset the object on each grasp attempt to its resting pose. Note this
     # doesn't have to be done, but it avoids instances where the object may
     # subsequently have fallen off the table
-    pose = sim.get_object_pose()
+    object_pose = sim.get_object_pose()
 
     num_successful_grasps = 0
     for count, row in enumerate(candidates):
 
-        print('Evaluating grasp %d/%d for object: %s'%(count, len(candidates), mesh_name))
+        work2candidate = np.dot(object_pose, lib.utils.format_htmatrix(row))
 
-        work2candidate = np.dot(pose, lib.utils.format_htmatrix(row))
-
+        # Don't want to try grasps where the gripper would be below the table
         direction = np.dot(work2candidate[:3, :3], np.atleast_2d([0, 0, 1]).T)
         if direction[2] * 10 > 0.:
             continue
 
-        sim.set_object_pose(pose[:3].flatten())
+        for _ in xrange(num_random_per_candidate):
 
-        # We can randomize the gripper candidate by rotating or translating
-        random_pose = siminterface.randomize_pose(work2candidate, base_offset=0.,
-                                                  offset_mag=0.02,
-                                                  local_rot=(0, 0, 359))
-        sim.set_gripper_pose(random_pose)
+            sim.set_object_pose(object_pose[:3].flatten())
 
-        # Try to grasp and lift the object.
-        pregrasp, postgrasp = sim.run_threaded_candidate()
+            # We can randomize the gripper candidate by rotation or translation.
+            # Here we let the pose vary +- 3cm along local z, and a random
+            # rotation between [0, 360) degress around local z
+            random_pose = siminterface.randomize_pose(work2candidate,
+                                                      offset_mag=0.03,
+                                                      local_rot=(0, 0, 359))
+            sim.set_gripper_pose(random_pose)
 
-        if pregrasp is None or postgrasp is None:
-            continue
-        elif not postgrasp['all_in_contact']: # Only save successful grasps
-            continue
+            # Try to grasp and lift the object. If the gripper during pre-grasp
+            # didn't have all fingers in contact with the object, the returned
+            # pregrasp & postgrasp structures will be None
+            pregrasp, postgrasp = sim.run_threaded_candidate()
 
-        # Pregrasp & postgrasp are filled the same way
-        if len(pregrasp_group) == 0:
+            if pregrasp is None or postgrasp is None:
+                continue
+
+            success = bool(int(postgrasp['all_in_contact']))
+            print('Grasp %d/%d for object: %s \tSuccess? %s'%\
+                  (count, len(candidates), mesh_name, success))
+
+            if success is False: # Only save successful grasps
+                continue
+
+            # Pregrasp & postgrasp are filled the same way; create initial
+            # structures if they're currently empty
+            if len(pregrasp_group) == 0:
+                for key, val in pregrasp.iteritems():
+                    initial = (1, val.shape[-1])
+                    maxshape = (None, val.shape[-1])
+                    pregrasp_group.create_dataset(key, initial, maxshape=maxshape)
+                    postgrasp_group.create_dataset(key, initial, maxshape=maxshape)
+
             for key, val in pregrasp.iteritems():
-                initial = (1, val.shape[-1])
-                maxshape = (None, val.shape[-1])
-                pregrasp_group.create_dataset(key, initial, maxshape=maxshape)
-                postgrasp_group.create_dataset(key, initial, maxshape=maxshape)
+                pregrasp_group[key].resize((num_successful_grasps+1, val.shape[-1]))
+                pregrasp_group[key][num_successful_grasps] = val
+            for key, val in postgrasp.iteritems():
+                postgrasp_group[key].resize((num_successful_grasps+1, val.shape[-1]))
+                postgrasp_group[key][num_successful_grasps] = val
 
-        for key, val in pregrasp.iteritems():
-            pregrasp_group[key].resize((num_successful_grasps+1, val.shape[-1]))
-            pregrasp_group[key][num_successful_grasps] = val
-        for key, val in postgrasp.iteritems():
-            postgrasp_group[key].resize((num_successful_grasps+1, val.shape[-1]))
-            postgrasp_group[key][num_successful_grasps] = val
-
-        num_successful_grasps += 1
+            num_successful_grasps += 1
     datafile.close()
 
     sim.stop()
 
 
 if __name__ == '__main__':
+    import glob
 
+    port = 19997
     if len(sys.argv) == 1:
-        meshes = os.listdir(config_mesh_dir)
-        #collect_grasps(os.path.join(config_mesh_dir, 'watering_can_poisson_003.stl'))
+        #meshes = glob.glob(os.path.join(config_mesh_dir, '*.py'))
+        meshes = glob.glob(os.path.join(config_mesh_dir, 'watering*.stl'))
+        collect_grasps(meshes[0], port)
 
         for m in meshes:
-            collect_grasps(os.path.join(config_mesh_dir, m), 19997)
+            collect_grasps(os.path.join(config_mesh_dir, m), port)
     else:
         port = sys.argv[1]
         mesh_name = sys.argv[2]

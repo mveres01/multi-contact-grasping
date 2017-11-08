@@ -6,11 +6,11 @@ import subprocess
 import time
 import numpy as np
 import trimesh.transformations as tf
-import vrep
 
 import lib
 import lib.utils
 from lib.python_config import project_dir
+import vrep
 vrep.simxFinish(-1)
 
 def wait_for_signal(clientID, signal, mode=vrep.simx_opmode_oneshot_wait):
@@ -129,13 +129,15 @@ def parse_grasp(header, line):
         current_pos += n_items
     return grasp
 
+
 def spawn_simulation(port, vrep_path, scene_path):
     """Spawns a child process using screen and starts a remote VREP server."""
 
     if platform not in ['linux', 'linux2']:
         raise Exception('Must be running on Linux to spawn a simulation.')
 
-    vrep_path = 'vrep' if vrep_path is None else vrep_path
+    #vrep_path = 'vrep' if vrep_path is None else vrep_path
+    vrep_path = '/scratch/mveres/VREP/vrep.sh'
 
     # Command to launch VREP
     vrep_cmd = '%s -h -q -s -gREMOTEAPISERVERSERVICE_%d_FALSE_TRUE %s'% \
@@ -144,6 +146,8 @@ def spawn_simulation(port, vrep_path, scene_path):
     # Command to launch VREP + detach from screen
     bash_cmd = 'screen -dmS port%d bash -c "export DISPLAY=:1 ;'\
                'ulimit -n 4096; %s " '%(port, vrep_cmd)
+
+    print bash_cmd
 
     process = subprocess.Popen(bash_cmd, shell=True)
     time.sleep(1)
@@ -166,7 +170,7 @@ class SimulatorInterface(object):
         # process running the simulator scene
         if platform in ['linux', 'linux2'] and not self._islistening():
             if scene_path is None:
-                scene_path = os.path.append('..', 'scenes', 'collect_multiview_grasps.ttt')
+                scene_path = os.path.join('..', 'scenes', 'collect_multiview_grasps.ttt')
             if not os.path.exists(scene_path):
                 raise Exception('Scene path <%s> not found. Is this right?'%scene_path)
 
@@ -571,4 +575,3 @@ if __name__ == '__main__':
                        props['frame_work2cam'][i],
                        grasps[i], reset_container=1)
         sim.set_object_pose(props['frame_work2obj'][i])
-        #sys.exit(1)

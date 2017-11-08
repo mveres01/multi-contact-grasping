@@ -79,9 +79,6 @@ function table.tostring( tbl )
 end
 
 
-
-
-
 ---	Checks that the grasp is valid: the fingertips are contacting the object, 
 -- and records the position, force, and normal if everything is good.
 function checkContacts(contactPoints, h_object)
@@ -468,18 +465,6 @@ end
 
 
 
-
-
-
--- Check where the data will come from
-local PORT_NUM = simGetStringParameter(sim_stringparam_app_arg1)
-
-if PORT_NUM == '' then
-	PORT_NUM = 19999 -- default
-	simExtRemoteApiStart(PORT_NUM)
-end
-
-
 simSetBooleanParameter(sim_boolparam_dynamics_handling_enabled, true)
 
 -- Here we execute the regular thread code:
@@ -488,7 +473,4 @@ if not res then
 	print('Error: ', err)
 	simAddStatusbarMessage('Lua runtime error: '..err)
 end
-
 print('Done simulation!')
-
-
