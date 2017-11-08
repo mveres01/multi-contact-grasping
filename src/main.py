@@ -4,20 +4,16 @@ sys.path.append('..')
 import h5py
 import numpy as np
 import trimesh
-import trimesh.transformations as tf
 import matplotlib
+matplotlib.use('agg')
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits import mplot3d
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from matplotlib import pyplot as plt
 
-import lib
-from lib.python_config import (config_simulation_path,
-                               config_mesh_dir, config_processed_data_dir)
+import lib.utils
+from lib.python_config import (config_mesh_dir, config_processed_data_dir)
 
-import queryclass
-
+import siminterface
 
 
 def load_mesh(mesh_path):
@@ -44,7 +40,7 @@ def plot_mesh_with_normals(mesh, matrices, direction_vec, normals=None, axis=Non
 
     if isinstance(direction_vec, list):
         dvec = np.atleast_2d(direction_vec).T
-    elif direction_vec.ndim == 1:
+    elif isinstance(direction_vec, np.ndarray) and direction_vec.ndim == 1:
         dvec = np.atleast_2d(direction_vec).T
     else:
         dvec = direction_vec
@@ -69,13 +65,13 @@ def plot_mesh_with_normals(mesh, matrices, direction_vec, normals=None, axis=Non
         gripper_point = np.hstack([matrices[i, 3], matrices[i, 7], matrices[i, 11]])
         gripper_point = np.atleast_2d(gripper_point)
 
-        direction = np.dot(transform[:3, :3], np.atleast_2d(direction_vec).T)
+        direction = np.dot(transform[:3, :3], dvec)
         direction = np.atleast_2d(direction).T
 
         # The plotted normals and grasp approach should be overlapping
         if normals is not None:
-            a = np.hstack([gripper_point, -np.atleast_2d(normals[i])]).flatten()
-            axis.quiver(*a, color='r', length=0.1)
+            to_plot = np.hstack([gripper_point, -np.atleast_2d(normals[i])])
+            axis.quiver(*to_plot, color='r', length=0.1)
 
         a = np.hstack([gripper_point, -direction]).flatten()
         axis.quiver(*a, color='k', length=0.1)
@@ -119,20 +115,17 @@ def generate_candidates(mesh, num_samples=1000, noise_level=0.05,
 
         matrices.append(matrix[:3].flatten())
 
-    '''
+    # Uncomment to view the generated grasp candidates
     matrices = np.vstack(matrices)
     plot_mesh_with_normals(mesh, matrices, up_vector)
-    mesh_name = mesh_path.split(os.path.sep)[-1].split('.')[0]
-    plt.title('Mesh: ' + mesh_name)
     plt.show()
-    '''
-    return np.vstack(matrices)
 
+    return matrices
 
 
 def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5):
 
-    sim = queryclass.SimulatorInterface(port=port)
+    sim = siminterface.SimulatorInterface(port=port)
 
     # Where we'll save all our data to
     if not os.path.exists(config_processed_data_dir):
@@ -163,7 +156,6 @@ def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5):
     sim.load_object(mesh_path, com, mass, inertia*5)
 
     pose = sim.get_object_pose()
-
     pose[:3, 3] = [0, 0, initial_height]
 
     sim.run_threaded_drop(pose)
@@ -171,41 +163,31 @@ def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5):
     # Reset the object on each grasp attempt to its resting pose. Note this
     # doesn't have to be done, but it avoids instances where the object may
     # subsequently have fallen off the table
-    pose = lib.utils.format_htmatrix(sim.get_object_pose())
-
-
-    sim.stop()
-    return
-
+    pose = sim.get_object_pose()
 
     num_successful_grasps = 0
     for row in candidates:
 
+        work2candidate = np.dot(pose, lib.utils.format_htmatrix(row))
 
-        mult = np.dot(pose, lib.utils.format_htmatrix(row))
-
-        direction = np.dot(mult[:3, :3], np.atleast_2d([0, 0, 1]).T)
+        direction = np.dot(work2candidate[:3, :3], np.atleast_2d([0, 0, 1]).T)
         if direction[2] * 10 > 0.:
             continue
 
-        #print 'Setting object pose!'
         sim.set_object_pose(pose[:3].flatten())
 
-        #print 'Setting gripper pose!'
         # We can randomize the gripper candidate by rotating or translating
-        mult = queryclass.randomize_pose(mult, 0., 0.02, local_rot=(0, 0, 359))
+        random_pose = siminterface.randomize_pose(work2candidate, base_offset=0.,
+                                                  offset_mag=0.02,
+                                                  local_rot=(0, 0, 359))
+        sim.set_gripper_pose(random_pose)
 
-        sim.set_gripper_pose(mult)
-
-
-
-        #print 'Attempting grasp'
+        # Try to grasp and lift the object.
         pregrasp, postgrasp = sim.run_threaded_candidate()
 
         if pregrasp is None or postgrasp is None:
             continue
-
-        if not postgrasp['all_in_contact']:
+        elif not postgrasp['all_in_contact']: # Only save successful grasps
             continue
 
         # Pregrasp & postgrasp are filled the same way
@@ -226,6 +208,9 @@ def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5):
         num_successful_grasps += 1
     datafile.close()
 
+    sim.stop()
+
+
 if __name__ == '__main__':
 
     if len(sys.argv) == 1:
@@ -236,5 +221,5 @@ if __name__ == '__main__':
             collect_grasps(os.path.join(config_mesh_dir, m), 19997)
     else:
         port = sys.argv[1]
-        mesh = sys.argv[2]
-        collect_grasps(os.path.join(config_mesh_dir, mesh), port)
+        mesh_name = sys.argv[2]
+        collect_grasps(os.path.join(config_mesh_dir, mesh_name), port)

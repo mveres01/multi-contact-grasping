@@ -7,9 +7,9 @@ import time
 import numpy as np
 import trimesh.transformations as tf
 import vrep
+
 import lib
 import lib.utils
-from lib.utils import format_htmatrix
 from lib.python_config import project_dir
 vrep.simxFinish(-1)
 
@@ -224,13 +224,15 @@ class SimulatorInterface(object):
     def _format_matrix(matrix_in):
         """Formats input matrices to V-REP as a lists of 12 components."""
 
-        if len(matrix_in) not in [12, 16]:
-            raise Exception('Length of input matrix must be either [12, 16]')
-
         matrix = matrix_in
         if not isinstance(matrix, np.ndarray):
             matrix = np.asarray(matrix)
-        matrix_ht = matrix.reshape(len(matrix) // 4, 4)
+
+        size = matrix.size
+        if size not in [12, 16]:
+            raise Exception('Length of input matrix must be either [12, 16] ' \
+                            'but provided length was <%d>'%size)
+        matrix_ht = matrix.reshape(size // 4, 4)
 
         return matrix_ht[:3].flatten().tolist()
 
@@ -303,7 +305,6 @@ class SimulatorInterface(object):
         """Given a name of an object in the scene, set pose WRT to workspace."""
 
         frame = self._format_matrix(frame_work2pose)
-        print name, len(frame)
 
         empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
@@ -404,11 +405,10 @@ class SimulatorInterface(object):
         while r != vrep.simx_return_ok:
             r, success = vrep.simxGetIntegerSignal(
                 self.clientID, 'object_resting', vrep.simx_opmode_oneshot_wait)
+        self._clear_signals()
 
         if success == 0:
             raise Exception('Error dropping object!')
-        self._clear_signals()
-
 
     def run_threaded_candidate(self, finger_angle=0):
         """Launches a threaded scrip in simulator that tests a grasp candidate.
