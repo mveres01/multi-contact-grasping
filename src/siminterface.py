@@ -13,6 +13,7 @@ from lib.python_config import project_dir, config_simulation_path
 import vrep
 vrep.simxFinish(-1)
 
+
 def wait_for_signal(clientID, signal, mode=vrep.simx_opmode_oneshot_wait):
     r = -1
     while r != vrep.simx_return_ok:
@@ -147,8 +148,6 @@ def spawn_simulation(port, vrep_path, scene_path):
     bash_cmd = 'screen -dmS port%d bash -c "export DISPLAY=:1 ;'\
                'ulimit -n 4096; %s " '%(port, vrep_cmd)
 
-    print bash_cmd
-
     process = subprocess.Popen(bash_cmd, shell=True)
     time.sleep(1)
 
@@ -164,21 +163,28 @@ class SimulatorInterface(object):
 
         self.port = port
         self.ip = ip
-        self.clientID = None
+        self.clientID = self._connect()
 
         # If we're running linux, we can try automatically spawning a child
         # process running the simulator scene
-        if platform in ['linux', 'linux2'] and not self._islistening():
-            if scene_path is None:
-                scene_path = config_simulation_path
-            if not os.path.exists(scene_path):
-                raise Exception('Scene path <%s> not found. Is this right?'%scene_path)
+        if platform in ['linux', 'linux2']:
+            if self.clientID == -1 and not self._islistening():
+                if scene_path is None:
+                    scene_path = config_simulation_path
+                if not os.path.exists(scene_path):
+                    raise Exception('Scene <%s> not found'%scene_path)
+                spawn_simulation(self.port, vrep_path, scene_path)
 
-            spawn_simulation(self.port, vrep_path, scene_path)
+                # Try starting communication
+                self.clientID = self._connect()
+            else:
+                vrep.simxStopSimulation(self.clientID, vrep.simx_opmode_blocking)
 
-        # Try starting communication
-        self.clientID = self._connect()
-
+        if self.clientID == -1:
+            raise Exception('Unable to connect to address <%s> on port '\
+                            '<%d>. Check that the simulator is currently '\
+                            'running.'%(self.ip, self.port))
+            
         # Tell the scene to start running
         self._start()
 
@@ -200,14 +206,9 @@ class SimulatorInterface(object):
                  time_out_in_ms=5000, comm_thread_cycle_in_ms=5):
 
         # Start communication thread
-        clientID = vrep.simxStart(self.ip, self.port, wait_until_connected,
-                                  do_not_reconnect_once_disconnected, time_out_in_ms,
-                                  comm_thread_cycle_in_ms)
-        if clientID == -1:
-            raise Exception('Unable to connect to address <%s> on port <%d>. ' \
-                            'Check that the simulator is currently running.'%\
-                            (self.ip, self.port))
-        return clientID
+        return vrep.simxStart(self.ip, self.port, wait_until_connected,
+                              do_not_reconnect_once_disconnected, time_out_in_ms,
+                              comm_thread_cycle_in_ms) 
 
     def _islistening(self):
         """Checks whether a program is listening on a port already or not"""

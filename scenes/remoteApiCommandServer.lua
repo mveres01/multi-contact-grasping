@@ -196,6 +196,7 @@ getPoseByName = function(inInts, inFloats, inStrings, inBuffer)
 	return {}, matrix, {}, ''
 end
 
+
 loadObject = function(inInts, inFloats, inStrings, inBuffer)
 
 	local file_format = inInts[1]
@@ -622,7 +623,7 @@ if (sim_call_type == sim_childscriptcall_initialization) then
 
     -- Check where the data will come from
     local PORT_NUM = simGetStringParameter(sim_stringparam_app_arg1)
-
+    
     if PORT_NUM == '' then
         PORT_NUM = 19999 -- default
         simExtRemoteApiStart(PORT_NUM)

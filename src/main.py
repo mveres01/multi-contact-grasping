@@ -1,6 +1,7 @@
 import os
 import sys
 sys.path.append('..')
+import glob
 import h5py
 import numpy as np
 import trimesh
@@ -13,7 +14,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import lib.utils
 from lib.python_config import (config_mesh_dir, config_collected_data_dir)
 
-import siminterface
+import siminterface as SI
 
 
 def load_mesh(mesh_path):
@@ -123,12 +124,16 @@ def generate_candidates(mesh, num_samples=1000, noise_level=0.05,
     return matrices
 
 
-def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5, 
+def collect_grasps(mesh_path, port, mass=1, initial_height=0.5, 
                    num_candidates=1000, candidate_noise_level=0.05, 
                    num_random_per_candidate=5,
                    candidate_offset=-0.07):
 
-    sim = siminterface.SimulatorInterface(port=port)
+
+    sim = SI.SimulatorInterface(port=port)
+    print mesh_path, sim.port
+
+
 
     # Get the paths & structures set up for saving results
     if not os.path.exists(config_collected_data_dir):
@@ -187,7 +192,7 @@ def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5,
             # We can randomize the gripper candidate by rotation or translation.
             # Here we let the pose vary +- 3cm along local z, and a random
             # rotation between [0, 360) degress around local z
-            random_pose = siminterface.randomize_pose(work2candidate,
+            random_pose = SI.randomize_pose(work2candidate,
                                                       offset_mag=0.03,
                                                       local_rot=(0, 0, 359))
             sim.set_gripper_pose(random_pose)
@@ -230,17 +235,49 @@ def collect_grasps(mesh_path, port=19999, mass=1, initial_height=0.5,
 
 
 if __name__ == '__main__':
+
+    meshes = glob.glob(os.path.join(config_mesh_dir, '*.stl'))
+
+    '''
+    #collect_grasps(os.path.join(config_mesh_dir, meshes[0]), interface)
+    collect_grasps(os.path.join(config_mesh_dir, 'tetra_pak_poisson_019.stl'), 20010)
+    '''
+
+    import multiprocessing
+    from multiprocessing import Process, Queue
+
+    num_cores = 6
+    port_list = np.arange(num_cores) + 20010
+
+    queue = Queue(maxsize=len(meshes))
+    for mesh in meshes:
+        queue.put(os.path.join(config_mesh_dir, mesh))
+
+    def consumer(port):
+        while not queue.empty():
+            mesh_name = queue.get()
+            collect_grasps(mesh_name, port)
+
+    processes = []
+    for i, port in enumerate(port_list):
+        p = Process(target=consumer, args=(port,))
+        p.start()
+        processes.append(p)
+
+    #for p in processes:
+    #    p.join()
+
+    '''
     import glob
 
     port = 19997
     if len(sys.argv) == 1:
-        #meshes = glob.glob(os.path.join(config_mesh_dir, '*.py'))
-        meshes = glob.glob(os.path.join(config_mesh_dir, 'watering*.stl'))
-        collect_grasps(meshes[0], port)
-
+        meshes = glob.glob(os.path.join(config_mesh_dir, '*.stl'))
+        #meshes = glob.glob(os.path.join(config_mesh_dir, 'watering*.stl'))
         for m in meshes:
             collect_grasps(os.path.join(config_mesh_dir, m), port)
     else:
         port = sys.argv[1]
         mesh_name = sys.argv[2]
         collect_grasps(os.path.join(config_mesh_dir, mesh_name), port)
+    '''
