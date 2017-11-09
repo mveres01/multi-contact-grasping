@@ -14,6 +14,22 @@ import vrep
 vrep.simxFinish(-1)
 
 
+def is_listening(ip='127.0.0.1', port=19997):
+    """Checks whether a program is listening on a port already or not"""
+
+    if platform not in ['linux', 'linux2']:
+        raise Exception('You must be running Linux to use this function.')
+
+    # Get a list of all current open / connected ports
+    try:
+        netstat = subprocess.Popen(['netstat', '-nao'], stdout=subprocess.PIPE)
+    except Exception as e:
+        raise e
+    ports = netstat.communicate()[0]
+
+    return ip + ':' + str(port) in ports
+
+
 def wait_for_signal(clientID, signal, mode=vrep.simx_opmode_oneshot_wait):
     r = -1
     while r != vrep.simx_return_ok:
@@ -73,8 +89,7 @@ def spawn_simulation(port, vrep_path, scene_path):
     if platform not in ['linux', 'linux2']:
         raise Exception('Must be running on Linux to spawn a simulation.')
 
-    #vrep_path = 'vrep' if vrep_path is None else vrep_path
-    vrep_path = '/scratch/mveres/VREP/vrep.sh'
+    vrep_path = 'vrep.sh' if vrep_path is None else vrep_path
 
     # Command to launch VREP
     vrep_cmd = '%s -h -q -s -gREMOTEAPISERVERSERVICE_%d_FALSE_TRUE %s'% \
@@ -86,11 +101,33 @@ def spawn_simulation(port, vrep_path, scene_path):
 
     process = subprocess.Popen(bash_cmd, shell=True)
     time.sleep(1)
+    return process
 
 
 class SimulatorInterface(object):
+    """Defines an interface for using Python to interact with a VREP simulation.
+
+    Connecting to V-REP can be done through 2 different modes:
+    
+    1. Continuous Remote API Service
+    -----------------------------
+    The continuous remote API tells the simulator to open a persistent 
+    communication channel on a given port. This persistance allows us to
+    interact with the simulator even while a scene may be stopped or paused.
+
+    2. 'Dynamic' Remote API Service
+    ----------------------------
+    A more dynamic communication scheme can be started by launching VREP, 
+    and telling it to open / listen on a specific port _while the scene
+    is running_. Here, V-REP must be running in order to communicate with
+    it, and prevents us from starting a stopped simulation.
+
+    When running with linux, it's easier to start a continuous service by 
+    launcing V-REP from the command line and attaching it to a screen session.
+    """
 
     def __init__(self, port, ip='127.0.0.1', vrep_path=None, scene_path=None):
+
 
         if not isinstance(port, int):
             raise Exception('Port <%s> must be of type <int>'%port)
@@ -99,30 +136,37 @@ class SimulatorInterface(object):
 
         self.port = port
         self.ip = ip
-        self.clientID = self._connect()
+        self.clientID = None
 
-        # If we're running linux, we can try automatically spawning a child
-        # process running the simulator scene
-        if platform in ['linux', 'linux2']:
-            if self.clientID == -1 and not self._islistening():
+        # See if there's a simulation already listening on this port
+        clientID = self._start_communication()
+
+        # If there's nothing listening, we can try spawning a sim on linux
+        if clientID == -1:
+            if platform in ['linux', 'linux2'] and not is_listening(ip, port):
+
                 if scene_path is None:
                     scene_path = config_simulation_path
                 if not os.path.exists(scene_path):
                     raise Exception('Scene <%s> not found'%scene_path)
-                spawn_simulation(self.port, vrep_path, scene_path)
+
+                print('Spawning a Continuous Server on port <%d>'%port)
+                spawn_simulation(port, vrep_path, scene_path)
 
                 # Try starting communication
-                self.clientID = self._connect()
-            else:
-                vrep.simxStopSimulation(self.clientID, vrep.simx_opmode_blocking)
+                clientID = self._start_communication()
 
-        if self.clientID == -1:
+        if clientID == -1:
             raise Exception('Unable to connect to address <%s> on port '\
                             '<%d>. Check that the simulator is currently '\
-                            'running.'%(self.ip, self.port))
-            
+                            'running, or the continuous service was started'\
+                            'successfully.'%(ip, port))
+
+        # Have communication
+        self.clientID = clientID
+
         # Tell the scene to start running
-        self._start()
+        self._start_simulation()
 
         # Remove All previous signals in the scene
         self._clear_signals()
@@ -137,29 +181,28 @@ class SimulatorInterface(object):
         vrep.simxClearStringSignal(self.clientID, 'pregrasp', mode)
         vrep.simxClearStringSignal(self.clientID, 'postgrasp', mode)
 
-    def _connect(self, wait_until_connected=True,
-                 do_not_reconnect_once_disconnected=False,
-                 time_out_in_ms=5000, comm_thread_cycle_in_ms=5):
-
-        # Start communication thread
-        return vrep.simxStart(self.ip, self.port, wait_until_connected,
+    def _start_communication(self, wait_until_start_communicationed=True,
+                             do_not_reconnect_once_disconnected=False,
+                             time_out_in_ms=15000, comm_thread_cycle_in_ms=5):
+        """Requests a communication pipe with the simulator."""
+        
+        return vrep.simxStart(self.ip, self.port, wait_until_start_communicationed,
                               do_not_reconnect_once_disconnected, time_out_in_ms,
-                              comm_thread_cycle_in_ms) 
+                              comm_thread_cycle_in_ms)
 
-    def _islistening(self):
-        """Checks whether a program is listening on a port already or not"""
+    def _start_simulation(self):
+        """Tells a VREP scene to start execution."""
 
-        if platform not in ['linux', 'linux2']:
-            raise Exception('You must be running Linux to use this function.')
+        if self.clientID is None or self.clientID == -1:
+            raise Exception('Unable to start the simulation scene. This is '\
+                            'likely a result of not being connected to the '\
+                            'simulator. Try reconnecting and start again.')
 
-        # Get a list of all current open / connected ports
-        try:
-            netstat = subprocess.Popen(['netstat', '-nao'], stdout=subprocess.PIPE)
-        except Exception as e:
-            raise e
-        ports = netstat.communicate()[0]
+        r = vrep.simxStartSimulation(self.clientID, vrep.simx_opmode_blocking)
 
-        return self.ip + ':' + str(self.port) in ports
+        if r != vrep.simx_return_ok:
+            raise Exception('Unable to start simulation.')
+        vrep.simxSynchronous(self.clientID, False)
 
     @staticmethod
     def _format_matrix(matrix_in):
@@ -176,18 +219,6 @@ class SimulatorInterface(object):
         matrix_ht = matrix.reshape(size // 4, 4)
 
         return matrix_ht[:3].flatten().tolist()
-
-    def _start(self):
-        """Tells a VREP scene to start execution."""
-
-        if self.clientID is None:
-            raise Exception('Remote API server must have been started and ' \
-                            'communication begun before running the simulation.')
-
-        r = vrep.simxStartSimulation(self.clientID, vrep.simx_opmode_oneshot)
-        if r != 1:
-            raise Exception('Unable to start simulation.')
-        vrep.simxSynchronous(self.clientID, False)
 
     def load_object(self, object_path, com, mass, inertia):
         """Loads an object into the simulator given it's full path.
@@ -272,7 +303,7 @@ class SimulatorInterface(object):
 
     def query(self, frame_work2cam, frame_world2work,
               resolution=128, rgb_near_clip=0.2, rgb_far_clip=10.0,
-              depth_far_clip=1.25, depth_near_clip=0.1, p_light_off=0.25,
+              depth_far_clip=1.25, depth_near_clip=0.2, p_light_off=0.25,
               p_light_mag=0.1, camera_fov=70*np.pi/180., reorient_up=True,
               randomize_texture=True, randomize_colour=True,
               randomize_lighting=True,
@@ -317,7 +348,7 @@ class SimulatorInterface(object):
              in_floats, in_strings, empty_buff, vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            return None, None, None
+            return None, None
 
         images = decode_images(r[2], depth_near_clip, depth_far_clip,
                                res_x=resolution, res_y=resolution)
@@ -383,7 +414,7 @@ class SimulatorInterface(object):
         postgrasp = decode_grasp(header, vrep.simxUnpackFloats(postgrasp))
         return pregrasp, postgrasp
 
-    def view_grasp(self, frame_world2work, frame_work2cam, grasp_wrt_cam, 
+    def view_grasp(self, frame_world2work, frame_work2cam, grasp_wrt_cam,
                    reset_container=0):
         """Plots the contact positions and normals of a grasp WRT camera frame.
 
@@ -412,21 +443,14 @@ class SimulatorInterface(object):
             raise Exception('Error when trying to display grasps in simulator.')
 
     def stop(self):
-        # Stop simulation
         vrep.simxStopSimulation(self.clientID, vrep.simx_opmode_blocking)
 
-        # End communication thread
-        vrep.simxFinish(self.clientID)
-
     def start(self):
-        pass
+        vrep.simxStartSimulation(self.clientID, vrep.simx_opmode_oneshot)
 
-    def isconnected(self):
-        pass
-
-    def isrunning(self):
-        pass
-
+    def is_running(self):
+        """Checks if simulator is connectedd by querying for connection ID."""
+        return vrep.simxGetConnectionId(self.clientID) != -1
 
 
 
@@ -444,10 +468,10 @@ if __name__ == '__main__':
     import h5py
     from lib.python_config import config_mesh_dir
 
-    GLOBAL_DATAFILE = 'C:/Users/Matt/Documents/grasping-multi-view/learning/valid256.hdf5'
+    GLOBAL_DATAFILE = '/scratch/mveres/grasping-cvae-multi/valid256.hdf5'
 
 
-    sim = SimulatorInterface(port=19999)
+    sim = SimulatorInterface(port=19000)
 
 
     # Load the data. Note that Grasps are encoded WRT workspace frame
@@ -475,7 +499,7 @@ if __name__ == '__main__':
         local_rot = (10, 10, 10)
         global_rot = (30, 30, 30)
 
-        frame_work2cam = format_htmatrix(props['frame_work2palm'][i])
+        frame_work2cam = lib.utils.format_htmatrix(props['frame_work2palm'][i])
 
         frame_work2cam = lib.utils.randomize_pose(frame_work2cam, base_offset,
                                                   offset_mag, None, None)
@@ -484,8 +508,11 @@ if __name__ == '__main__':
                                               props['frame_world2work'][i],
                                               camera_fov=60*np.pi/180.)
 
-        frame_cam2work_ht = lib.utils.invert_htmatrix(frame_work2cam_ht)
-        grasp = lib.utils.convert_grasp_frame(frame_cam2work_ht, grasps[i])
+        if frame_work2cam_ht is not None:
+            frame_cam2work_ht = lib.utils.invert_htmatrix(frame_work2cam_ht)
+            grasp = lib.utils.convert_grasp_frame(frame_cam2work_ht, grasps[i])
+
+        print 'Running?: ', sim.is_running()
 
 
         '''

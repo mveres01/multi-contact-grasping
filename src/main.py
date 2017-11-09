@@ -14,7 +14,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import lib.utils
 from lib.python_config import (config_mesh_dir, config_collected_data_dir)
 
-import siminterface as SI
+import simulation as SI
 
 
 def load_mesh(mesh_path):
@@ -124,10 +124,10 @@ def generate_candidates(mesh, num_samples=1000, noise_level=0.05,
     return matrices
 
 
-def collect_grasps(mesh_path, port, mass=1, initial_height=0.5, 
+def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5, 
                    num_candidates=1000, candidate_noise_level=0.05, 
                    num_random_per_candidate=5,
-                   candidate_offset=-0.07):
+                   candidate_offset=-0.08):
 
     # Get the paths & structures set up for saving results
     if not os.path.exists(config_collected_data_dir):
@@ -142,9 +142,6 @@ def collect_grasps(mesh_path, port, mass=1, initial_height=0.5,
     pregrasp_group = datafile.create_group('pregrasp')
     postgrasp_group = datafile.create_group('postgrasp')
 
-
-
-    sim = SI.SimulatorInterface(port=port)
 
 
     # Load the mesh from file here, so we can generate grasp candidates 
@@ -228,55 +225,78 @@ def collect_grasps(mesh_path, port, mass=1, initial_height=0.5,
                 postgrasp_group[key][num_successful_grasps] = val
 
             num_successful_grasps += 1
-    datafile.close()
 
-    sim.stop()
+    datafile.close()
+    print 'Finished Collecting!'
 
 
 if __name__ == '__main__':
 
+    '''
     meshes = glob.glob(os.path.join(config_mesh_dir, '*.stl'))
+    sim = SI.SimulatorInterface(port=19999)
+    for m in meshes:
+        mesh_path = os.path.join(config_mesh_dir, m)
+        print 'mesh_path: ', mesh_path
+        collect_grasps(mesh_path, sim)
+    '''
+    
+    from subprocess import check_output
+    import signal
+    import time
+    if len(sys.argv) > 1:
+       
+        port = None
+        port_list = range(20000, 25000)
+        np.random.shuffle(port_list)
+        for p in port_list:
+            if not SI.is_listening(port=p):
+                port = p
+                break
+
+        sim = SI.SimulatorInterface(port=port)
+        time.sleep(0.1)
+
+        collect_grasps(os.path.join(config_mesh_dir, sys.argv[1]), sim)
+        sim.stop()
+        
+        # Kill the screen & vrep session
+        process = check_output("screen -ls | awk '/\.port%d\t/ {print strtonum($1)}'"%p, shell=True)
+        process = int(process)
+        os.kill(process, signal.SIGTERM) 
+
 
     '''
-    #collect_grasps(os.path.join(config_mesh_dir, meshes[0]), interface)
-    collect_grasps(os.path.join(config_mesh_dir, 'tetra_pak_poisson_019.stl'), 20010)
-    '''
-
     import multiprocessing
     from multiprocessing import Process, Queue
 
-    num_cores = 6
-    port_list = np.arange(num_cores) + 20010
+    num_cores = 3
+    port_list = np.arange(num_cores) + 20000
 
     queue = Queue(maxsize=len(meshes))
     for mesh in meshes:
         queue.put(os.path.join(config_mesh_dir, mesh))
 
     def consumer(port):
+
+        worker = SI.SimulatorInterface(port=port)
+
+        #print 'ClientID / Port: ', worker.clientID, worker.port
         while not queue.empty():
             mesh_name = queue.get()
-            collect_grasps(mesh_name, port)
+            collect_grasps(mesh_name, worker)
+            worker.stop()
+            worker.start()
 
+    import time
     processes = []
     for i, port in enumerate(port_list):
+
+        SI.spawn_simulation(port, None, lib.python_config.config_simulation_path)
+
         p = Process(target=consumer, args=(port,))
-        p.start()
         processes.append(p)
-
-    #for p in processes:
-    #    p.join()
-
-    '''
-    import glob
-
-    port = 19997
-    if len(sys.argv) == 1:
-        meshes = glob.glob(os.path.join(config_mesh_dir, '*.stl'))
-        #meshes = glob.glob(os.path.join(config_mesh_dir, 'watering*.stl'))
-        for m in meshes:
-            collect_grasps(os.path.join(config_mesh_dir, m), port)
-    else:
-        port = sys.argv[1]
-        mesh_name = sys.argv[2]
-        collect_grasps(os.path.join(config_mesh_dir, mesh_name), port)
+        time.sleep(0.1)
+        p.start()
+        time.sleep(0.1)
     '''
