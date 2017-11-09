@@ -129,12 +129,6 @@ def collect_grasps(mesh_path, port, mass=1, initial_height=0.5,
                    num_random_per_candidate=5,
                    candidate_offset=-0.07):
 
-
-    sim = SI.SimulatorInterface(port=port)
-    print mesh_path, sim.port
-
-
-
     # Get the paths & structures set up for saving results
     if not os.path.exists(config_collected_data_dir):
         os.makedirs(config_collected_data_dir)
@@ -150,9 +144,13 @@ def collect_grasps(mesh_path, port, mass=1, initial_height=0.5,
 
 
 
-    # Load the mesh from file, so we can compute grasp candidates, and access
-    # properties such as the center of mass & inertia
+    sim = SI.SimulatorInterface(port=port)
+
+
+    # Load the mesh from file here, so we can generate grasp candidates 
+    # and access object-specific properties like inertia.
     mesh = load_mesh(mesh_path)
+
     com = mesh.mass_properties['center_mass']
     inertia = mesh.mass_properties['inertia'].flatten()
 
@@ -160,9 +158,8 @@ def collect_grasps(mesh_path, port, mass=1, initial_height=0.5,
                                      noise_level=candidate_noise_level,
                                      gripper_offset=candidate_offset)
 
-    # Load the object into the sim & specify initial properties.
-    # With every new mesh, we give it a starting pose at some height above the
-    # table, and allow it to fall into a natural resting pose.
+    # Compute an initial object resting pose by dropping the object from a 
+    # given position / height above the workspace table
     sim.load_object(mesh_path, com, mass, inertia*5)
 
     initial_pose = sim.get_object_pose()
@@ -170,10 +167,12 @@ def collect_grasps(mesh_path, port, mass=1, initial_height=0.5,
 
     sim.run_threaded_drop(initial_pose)
 
+
     # Reset the object on each grasp attempt to its resting pose. Note this
     # doesn't have to be done, but it avoids instances where the object may
     # subsequently have fallen off the table
     object_pose = sim.get_object_pose()
+ 
 
     num_successful_grasps = 0
     for count, row in enumerate(candidates):
@@ -192,9 +191,9 @@ def collect_grasps(mesh_path, port, mass=1, initial_height=0.5,
             # We can randomize the gripper candidate by rotation or translation.
             # Here we let the pose vary +- 3cm along local z, and a random
             # rotation between [0, 360) degress around local z
-            random_pose = SI.randomize_pose(work2candidate,
-                                                      offset_mag=0.03,
-                                                      local_rot=(0, 0, 359))
+            random_pose = lib.utils.randomize_pose(work2candidate,
+                                                   offset_mag=0.03,
+                                                   local_rot=(0, 0, 359))
             sim.set_gripper_pose(random_pose)
 
             # Try to grasp and lift the object. If the gripper during pre-grasp
@@ -212,8 +211,8 @@ def collect_grasps(mesh_path, port, mass=1, initial_height=0.5,
             if success is False: # Only save successful grasps
                 continue
 
-            # Pregrasp & postgrasp are filled the same way; create initial
-            # structures if they're currently empty
+
+            # Create initial structures if dataset is currently empty
             if len(pregrasp_group) == 0:
                 for key, val in pregrasp.iteritems():
                     initial = (1, val.shape[-1])

@@ -21,70 +21,6 @@ def wait_for_signal(clientID, signal, mode=vrep.simx_opmode_oneshot_wait):
     return data
 
 
-def rand_step(max_angle):
-    """Returns a random point between (-max_angle, max_angle) in radians."""
-    if max_angle is None or max_angle <= 0:
-        return max_angle
-    return np.float32(np.random.randint(-max_angle, max_angle))*np.pi/180.
-
-
-def spherical_rotate(max_rot_degrees):
-    """Calculate a random rotation matrix using angle magnitudes in max_rot."""
-
-    assert isinstance(max_rot_degrees, tuple) and len(max_rot_degrees) == 3
-
-    xrot, yrot, zrot = max_rot_degrees
-
-    # Build the global rotation matrix using quaternions
-    q_xr = tf.quaternion_about_axis(rand_step(xrot), [1, 0, 0])
-    q_yr = tf.quaternion_about_axis(rand_step(yrot), [0, 1, 0])
-    q_zr = tf.quaternion_about_axis(rand_step(zrot), [0, 0, 1])
-
-    # Multiply global and local rotations
-    rotation = tf.quaternion_multiply(q_xr, q_yr)
-    rotation = tf.quaternion_multiply(rotation, q_zr)
-    return tf.quaternion_matrix(rotation)
-
-
-def randomize_pose(frame_work2pose, base_offset=0., offset_mag=0.01,
-                   local_rot=None, global_rot=None, min_dist=None):
-    """Computes a random pose for any frame by varying position + orientation.
-
-    Given an initial frame of WRT the workspace, we choose a random offset
-    along the local z-direction according to offset_mag. The frame is then
-    rotated according to random local and global rotations, by sampling
-    (x, y, z) values specified in local/global_rot.
-    """
-
-    if frame_work2pose is None:
-        frame = np.eye(4)
-    elif isinstance(frame_work2pose, list):
-        frame = lib.utils.format_htmatrix(frame_work2pose)
-    elif frame_work2pose.ndim == 1:
-        frame = lib.utils.format_htmatrix(frame_work2pose)
-    else:
-        frame = frame_work2pose
-
-    # Perform a local translation of the camera using a random offset
-    offset = base_offset
-    if offset_mag != 0:
-        offset += np.random.uniform(-abs(offset_mag), abs(offset_mag))
-
-    translation_ht = np.eye(4)
-    translation_ht[:, 3] = np.array([0, 0, offset, 1])
-    translation_ht = np.dot(frame, translation_ht)
-
-    # Calculate local & global rotations using quaternion math
-    local_ht = np.eye(4) if local_rot is None else spherical_rotate(local_rot)
-    global_ht = np.eye(4) if global_rot is None else spherical_rotate(global_rot)
-
-    # Compute new frame & limit the z-pos to be a minimum height above workspace
-    randomized_ht = np.dot(np.dot(global_ht, translation_ht), local_ht)
-    if min_dist is not None:
-        randomized_ht[2, 3] = np.maximum(randomized_ht[2, 3], min_dist)
-    return randomized_ht[:3].flatten()
-
-
 def decode_images(float_string, near_clip, far_clip, res_x=128, res_y=128):
     """Decodes a float string containing Depth, RGB, and binary mask info."""
 
@@ -105,7 +41,7 @@ def decode_images(float_string, near_clip, far_clip, res_x=128, res_y=128):
     return images[np.newaxis].transpose(0, 3, 1, 2)
 
 
-def parse_grasp(header, line):
+def decode_grasp(header, line):
     """Parses a line of information following size convention in header."""
 
     line = np.atleast_2d(line)
@@ -443,11 +379,12 @@ class SimulatorInterface(object):
         if header == '-1':
             return None, None
 
-        pregrasp = parse_grasp(header, vrep.simxUnpackFloats(pregrasp), )
-        postgrasp = parse_grasp(header, vrep.simxUnpackFloats(postgrasp))
+        pregrasp = decode_grasp(header, vrep.simxUnpackFloats(pregrasp))
+        postgrasp = decode_grasp(header, vrep.simxUnpackFloats(postgrasp))
         return pregrasp, postgrasp
 
-    def view_grasp(self, frame_world2work, frame_work2cam, grasp_wrt_cam, reset_container=0):
+    def view_grasp(self, frame_world2work, frame_work2cam, grasp_wrt_cam, 
+                   reset_container=0):
         """Plots the contact positions and normals of a grasp WRT camera frame.
 
         This function first converts the grasp from the camera frame to workspace
@@ -540,8 +477,8 @@ if __name__ == '__main__':
 
         frame_work2cam = format_htmatrix(props['frame_work2palm'][i])
 
-        frame_work2cam = randomize_pose(frame_work2cam, base_offset,
-                                        offset_mag, None, None)
+        frame_work2cam = lib.utils.randomize_pose(frame_work2cam, base_offset,
+                                                  offset_mag, None, None)
 
         images, frame_work2cam_ht = sim.query(frame_work2cam,
                                               props['frame_world2work'][i],

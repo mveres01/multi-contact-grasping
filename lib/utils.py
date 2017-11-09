@@ -5,18 +5,11 @@ import numpy as np
 import trimesh
 from trimesh import transformations as tf
 
-from mpl_toolkits import mplot3d
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from matplotlib import pyplot as plt
 
-from PIL import Image
-
 from lib.python_config import config_mesh_dir
-
-
-def float32(x):
-    return np.float32(x)
 
 
 def calc_mesh_centroid(trimesh_mesh,  center_type='vrep'):
@@ -377,6 +370,69 @@ def reorient_up_direction(work2cam, world2work, direction_up, world2point=None):
 
     return np.dot(work2cam, rotMat)[:3].flatten()
 
+
+def rand_step(max_angle):
+    """Returns a random point between (-max_angle, max_angle) in radians."""
+    if max_angle is None or max_angle <= 0:
+        return max_angle
+    return np.float32(np.random.randint(-max_angle, max_angle))*np.pi/180.
+
+
+def spherical_rotate(max_rot_degrees):
+    """Calculate a random rotation matrix using angle magnitudes in max_rot."""
+
+    assert isinstance(max_rot_degrees, tuple) and len(max_rot_degrees) == 3
+
+    xrot, yrot, zrot = max_rot_degrees
+
+    # Build the global rotation matrix using quaternions
+    q_xr = tf.quaternion_about_axis(rand_step(xrot), [1, 0, 0])
+    q_yr = tf.quaternion_about_axis(rand_step(yrot), [0, 1, 0])
+    q_zr = tf.quaternion_about_axis(rand_step(zrot), [0, 0, 1])
+
+    # Multiply global and local rotations
+    rotation = tf.quaternion_multiply(q_xr, q_yr)
+    rotation = tf.quaternion_multiply(rotation, q_zr)
+    return tf.quaternion_matrix(rotation)
+
+
+def randomize_pose(frame_work2pose, base_offset=0., offset_mag=0.01,
+                   local_rot=None, global_rot=None, min_dist=None):
+    """Computes a random pose for any frame by varying position + orientation.
+
+    Given an initial frame of WRT the workspace, we choose a random offset
+    along the local z-direction according to offset_mag. The frame is then
+    rotated according to random local and global rotations, by sampling
+    (x, y, z) values specified in local/global_rot.
+    """
+
+    if frame_work2pose is None:
+        frame = np.eye(4)
+    elif isinstance(frame_work2pose, list):
+        frame = format_htmatrix(frame_work2pose)
+    elif frame_work2pose.ndim == 1:
+        frame = format_htmatrix(frame_work2pose)
+    else:
+        frame = frame_work2pose
+
+    # Perform a local translation of the camera using a random offset
+    offset = base_offset
+    if offset_mag != 0:
+        offset += np.random.uniform(-abs(offset_mag), abs(offset_mag))
+
+    translation_ht = np.eye(4)
+    translation_ht[:, 3] = np.array([0, 0, offset, 1])
+    translation_ht = np.dot(frame, translation_ht)
+
+    # Calculate local & global rotations using quaternion math
+    local_ht = np.eye(4) if local_rot is None else spherical_rotate(local_rot)
+    global_ht = np.eye(4) if global_rot is None else spherical_rotate(global_rot)
+
+    # Compute new frame & limit the z-pos to be a minimum height above workspace
+    randomized_ht = np.dot(np.dot(global_ht, translation_ht), local_ht)
+    if min_dist is not None:
+        randomized_ht[2, 3] = np.maximum(randomized_ht[2, 3], min_dist)
+    return randomized_ht[:3].flatten()
 
 
 def load_subset(h5_file, object_keys, shuffle=True):
