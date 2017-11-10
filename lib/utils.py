@@ -9,9 +9,6 @@ from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from matplotlib import pyplot as plt
 
-from lib.python_config import config_mesh_dir
-
-
 def calc_mesh_centroid(trimesh_mesh,  center_type='vrep'):
     """Calculates the center of a mesh according to three different metrics."""
 
@@ -184,11 +181,10 @@ def rxyz(thetax, thetay, thetaz, as_degrees=False):
         thetaz = thetaz*math.pi/180.
 
     # Convert radians to degrees
-    rx = tf.rotation_matrix(thetax, [1,0,0])
-    ry = tf.rotation_matrix(thetay, [0,1,0])
-    rz = tf.rotation_matrix(thetaz, [0,0,1])
+    rx = tf.rotation_matrix(thetax, [1, 0, 0])
+    ry = tf.rotation_matrix(thetay, [0, 1, 0])
+    rz = tf.rotation_matrix(thetaz, [0, 0, 1])
     rxyz = tf.concatenate_matrices(rx,ry,rz)
-
     return rxyz
 
 
@@ -242,7 +238,7 @@ def get_unique_idx(data_in, n_nbrs=-1, thresh=1e-4, scale=False):
         exclude_vector[indices[where]] = True
 
     # Return a list of indices that represent unique elements of the dataset
-    return np.bitwise_not(exclude_vector)
+    return np.where(np.bitwise_not(exclude_vector) == True)[0]
 
 
 def convert_grasp_frame(frame2matrix, matrix2grasp):

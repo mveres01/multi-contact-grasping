@@ -124,8 +124,8 @@ def generate_candidates(mesh, num_samples=1000, noise_level=0.05,
     return matrices
 
 
-def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5, 
-                   num_candidates=1000, candidate_noise_level=0.05, 
+def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
+                   num_candidates=1000, candidate_noise_level=0.05,
                    num_random_per_candidate=5,
                    candidate_offset=-0.08):
 
@@ -144,7 +144,7 @@ def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
 
 
 
-    # Load the mesh from file here, so we can generate grasp candidates 
+    # Load the mesh from file here, so we can generate grasp candidates
     # and access object-specific properties like inertia.
     mesh = load_mesh(mesh_path)
 
@@ -155,7 +155,7 @@ def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
                                      noise_level=candidate_noise_level,
                                      gripper_offset=candidate_offset)
 
-    # Compute an initial object resting pose by dropping the object from a 
+    # Compute an initial object resting pose by dropping the object from a
     # given position / height above the workspace table
     sim.load_object(mesh_path, com, mass, inertia*5)
 
@@ -169,7 +169,7 @@ def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
     # doesn't have to be done, but it avoids instances where the object may
     # subsequently have fallen off the table
     object_pose = sim.get_object_pose()
- 
+
 
     num_successful_grasps = 0
     for count, row in enumerate(candidates):
@@ -232,20 +232,11 @@ def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
 
 if __name__ == '__main__':
 
-    '''
-    meshes = glob.glob(os.path.join(config_mesh_dir, '*.stl'))
-    sim = SI.SimulatorInterface(port=19999)
-    for m in meshes:
-        mesh_path = os.path.join(config_mesh_dir, m)
-        print 'mesh_path: ', mesh_path
-        collect_grasps(mesh_path, sim)
-    '''
-    
     from subprocess import check_output
     import signal
     import time
     if len(sys.argv) > 1:
-       
+
         port = None
         port_list = range(20000, 25000)
         np.random.shuffle(port_list)
@@ -259,44 +250,16 @@ if __name__ == '__main__':
 
         collect_grasps(os.path.join(config_mesh_dir, sys.argv[1]), sim)
         sim.stop()
-        
+
         # Kill the screen & vrep session
         process = check_output("screen -ls | awk '/\.port%d\t/ {print strtonum($1)}'"%p, shell=True)
         process = int(process)
-        os.kill(process, signal.SIGTERM) 
-
-
-    '''
-    import multiprocessing
-    from multiprocessing import Process, Queue
-
-    num_cores = 3
-    port_list = np.arange(num_cores) + 20000
-
-    queue = Queue(maxsize=len(meshes))
-    for mesh in meshes:
-        queue.put(os.path.join(config_mesh_dir, mesh))
-
-    def consumer(port):
-
-        worker = SI.SimulatorInterface(port=port)
-
-        #print 'ClientID / Port: ', worker.clientID, worker.port
-        while not queue.empty():
-            mesh_name = queue.get()
-            collect_grasps(mesh_name, worker)
-            worker.stop()
-            worker.start()
-
-    import time
-    processes = []
-    for i, port in enumerate(port_list):
-
-        SI.spawn_simulation(port, None, lib.python_config.config_simulation_path)
-
-        p = Process(target=consumer, args=(port,))
-        processes.append(p)
-        time.sleep(0.1)
-        p.start()
-        time.sleep(0.1)
-    '''
+        os.kill(process, signal.SIGTERM)
+    else:
+        #meshes = glob.glob(os.path.join(config_mesh_dir, '*.stl'))
+        meshes = glob.glob(os.path.join(config_mesh_dir, 'bowling_pin_poisson_000.stl'))
+        sim = SI.SimulatorInterface(port=19999)
+        for m in meshes:
+            mesh_path = os.path.join(config_mesh_dir, m)
+            print 'mesh_path: ', mesh_path
+            collect_grasps(mesh_path, sim)

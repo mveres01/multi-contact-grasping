@@ -44,12 +44,13 @@ function randomizeColour(object_handle)
 
 	local colour_components =
 		{sim_colorcomponent_ambient_diffuse,
-	     sim_colorcomponent_specular,
-	     sim_colorcomponent_emission,
+		 sim_colorcomponent_specular,
+		 sim_colorcomponent_emission,
 	     sim_colorcomponent_auxiliary}
 
+	local rand_rgb = {math.random(), math.random(), math.random()}
+
 	for i = 1, #colour_components, 1 do
-		local rand_rgb = {math.random(), math.random(), math.random()}
 		simSetShapeColor(object_handle, nil, colour_components[i], rand_rgb)
 	end
 end
@@ -160,14 +161,14 @@ setGripperPose = function(inInts, inFloats, inStrings, inBuffer)
 	local h_gripper_base = simGetIntegerSignal('h_gripper_base')
 	local h_gripper_dummy = simGetIntegerSignal('h_gripper_dummy')
 	local h_gripper_config_buffer = simGetIntegerSignal('h_gripper_config_buffer')
-	
+
 	-- Reset the configuration of gripper and pose of grasp dummy
 	simSetConfigurationTree(h_gripper_config_buffer)
-		
+
 	simSetObjectMatrix(h_gripper_dummy, h_workspace, pose)
 
 	resetHand(h_gripper_base)
-		
+
 	return {}, {}, {}, ''
 end
 
@@ -197,6 +198,52 @@ getPoseByName = function(inInts, inFloats, inStrings, inBuffer)
 end
 
 
+setJointPositionByName = function(inInts, inFloats, inStrings, inBuffer)
+
+	local position = inFloats[1]
+	local h_part = simGetObjectHandle(inStrings[1])
+	simSetJointPosition(h_part, position)
+	return {}, {}, {}, ''
+end
+
+
+
+setGripperProperties = function(inInts, inFloats, inStrings, inBuffer)
+
+	local model_properties = {sim_modelproperty_not_collidable, 
+							  sim_modelproperty_not_measurable,
+							  sim_modelproperty_not_renderable,
+							  sim_modelproperty_not_detectable,
+							  sim_modelproperty_not_cuttable,
+							  sim_modelproperty_not_dynamic,
+							  sim_modelproperty_not_respondable,
+							  sim_modelproperty_not_visible}
+							  
+	if #inInts ~= #model_properties then
+		print('Number of model properties != # input properties.')
+		print('setGripperProperties requires the following parameters in order:')
+		print('sim_modelproperty_not_collidable')
+		print('sim_modelproperty_not_measurable')
+		print('sim_modelproperty_not_renderable')
+		print('sim_modelproperty_not_detectable')
+		print('sim_modelproperty_not_cuttable')
+		print('sim_modelproperty_not_dynamic')
+		print('sim_modelproperty_not_respondable')
+		print('sim_modelproperty_not_visible')
+	else
+		local h_gripper_base = simGetIntegerSignal('h_gripper_base')
+
+		local props = 0
+		for i = 1, #inInts, 1 do
+			if inInts[i] == 1 then
+				props = props + model_properties[i]
+			end
+		end
+		simSetModelProperty(h_gripper_base, props)
+	end
+	return {}, {}, {}, ''
+end
+	
 loadObject = function(inInts, inFloats, inStrings, inBuffer)
 
 	local file_format = inInts[1]
@@ -205,8 +252,8 @@ loadObject = function(inInts, inFloats, inStrings, inBuffer)
 
 	local com = {inFloats[1], inFloats[2], inFloats[3]}
 	local mass = inFloats[4]
-	local inertia = {inFloats[5], inFloats[6], inFloats[7],
-		             inFloats[8], inFloats[9], inFloats[10],
+	local inertia = {inFloats[5],  inFloats[6],  inFloats[7],
+		             inFloats[8],  inFloats[9],  inFloats[10],
 			         inFloats[11], inFloats[12], inFloats[13]}
 
 	-- Load the object and set pose, if we're interested in a new object.
@@ -239,14 +286,14 @@ loadObject = function(inInts, inFloats, inStrings, inBuffer)
 		simReorientShapeBoundingBox(h_object, -1)
 		simSetShapeMaterial(h_object, simGetMaterialId('usr_sticky'))
 
-
 		-- Set the object to be renderable & detectable by all sensors
 		simSetObjectSpecialProperty(h_object,
 			sim_objectspecialproperty_renderable +
 			sim_objectspecialproperty_detectable_all)
 
+		--- By default, the absolute reference frame is used. We re-orient the
+		-- object to be WRT this frame by default, so don't need an extra mtx.
 		simSetShapeMassAndInertia(h_object, mass, inertia, com)
-
 
 		-- Playing with ODE & vortex engines
 		simSetEngineFloatParameter(sim_ode_body_friction, h_object, 0.9)
@@ -347,8 +394,8 @@ queryCamera = function(inInts, inFloats, inStrings, inBuffer)
 	end
 	simSetObjectInt32Parameter(h_camera_mask, sim_visionintparam_entity_to_render, h_object)
 
-    -- We only need a single picture of the object, so we need to
-    --   make sure that the simulation knows to render it now
+    --- We only need a single picture of the object, so we need to
+    -- make sure that the simulation knows to render it now
     simHandleVisionSensor(h_camera_depth)
     simHandleVisionSensor(h_camera_rgb)
     simHandleVisionSensor(h_camera_mask)
@@ -357,7 +404,7 @@ queryCamera = function(inInts, inFloats, inStrings, inBuffer)
     local colour_image = simGetVisionSensorImage(h_camera_rgb)
 	local mask_image = simGetVisionSensorImage(h_camera_mask)
 
-	local all_images = table.copy({}, mask_image, colour_image, depth_image)
+	local all_images = table.copy({}, depth_image,  colour_image, mask_image)
 
 	return {}, all_images, {}, ''
 end
@@ -623,7 +670,7 @@ if (sim_call_type == sim_childscriptcall_initialization) then
 
     -- Check where the data will come from
     local PORT_NUM = simGetStringParameter(sim_stringparam_app_arg1)
-    
+
     if PORT_NUM == '' then
         PORT_NUM = 19999 -- default
         simExtRemoteApiStart(PORT_NUM)

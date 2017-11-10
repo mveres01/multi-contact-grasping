@@ -38,7 +38,12 @@ def wait_for_signal(clientID, signal, mode=vrep.simx_opmode_oneshot_wait):
 
 
 def decode_images(float_string, near_clip, far_clip, res_x=128, res_y=128):
-    """Decodes a float string containing Depth, RGB, and binary mask info."""
+    """Decodes a float string containing Depth, RGB, and binary mask info.
+
+    Images are encoded as (rows, cols, channels), and when retrieved from the
+    simulator have their rows inverted. We undo these transformations and
+    return a tensor of shape (1, channels, rows, cols).
+    """
 
     assert len(float_string) == res_x * res_y * 7, \
         'Image data has length <%d> but expected length <%d>'%\
@@ -50,7 +55,7 @@ def decode_images(float_string, near_clip, far_clip, res_x=128, res_y=128):
     depth = near_clip + depth*(far_clip - near_clip)
 
     rgb = images[res_x*res_y:4*res_x*res_y].reshape(res_y, res_x, 3)
-    mask = images[4*res_x*res_y:].reshape(res_y, res_x, 3)
+    mask = images[4*res_x*res_y:].reshape(res_y, res_x, 3)[:, :, 0:1]
 
     # The image rows are inverted from what the camera sees in simulator
     images = np.float32(np.concatenate([rgb, depth, mask], axis=2))[::-1]
@@ -108,21 +113,21 @@ class SimulatorInterface(object):
     """Defines an interface for using Python to interact with a VREP simulation.
 
     Connecting to V-REP can be done through 2 different modes:
-    
+
     1. Continuous Remote API Service
     -----------------------------
-    The continuous remote API tells the simulator to open a persistent 
+    The continuous remote API tells the simulator to open a persistent
     communication channel on a given port. This persistance allows us to
     interact with the simulator even while a scene may be stopped or paused.
 
     2. 'Dynamic' Remote API Service
     ----------------------------
-    A more dynamic communication scheme can be started by launching VREP, 
+    A more dynamic communication scheme can be started by launching VREP,
     and telling it to open / listen on a specific port _while the scene
     is running_. Here, V-REP must be running in order to communicate with
     it, and prevents us from starting a stopped simulation.
 
-    When running with linux, it's easier to start a continuous service by 
+    When running with linux, it's easier to start a continuous service by
     launcing V-REP from the command line and attaching it to a screen session.
     """
 
@@ -185,7 +190,7 @@ class SimulatorInterface(object):
                              do_not_reconnect_once_disconnected=False,
                              time_out_in_ms=15000, comm_thread_cycle_in_ms=5):
         """Requests a communication pipe with the simulator."""
-        
+
         return vrep.simxStart(self.ip, self.port, wait_until_start_communicationed,
                               do_not_reconnect_once_disconnected, time_out_in_ms,
                               comm_thread_cycle_in_ms)
@@ -298,8 +303,39 @@ class SimulatorInterface(object):
              [], [name], empty_buff, vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            raise Exception('Error getting pose for name <%s>!'%name)
+            raise Exception('Error getting pose for <%s>!'%name)
         return lib.utils.format_htmatrix(r[2])
+
+    def set_joint_position_by_name(self, name, position):
+        """Given a name of an object in the scene, set pose WRT to workspace."""
+
+        empty_buff = bytearray()
+        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
+             vrep.sim_scripttype_childscript, 'setJointPositionByName', [],
+             [position], [name], empty_buff, vrep.simx_opmode_blocking)
+
+        if r[0] != vrep.simx_return_ok:
+            raise Exception('Error setting joint position for <%s>!'%name)
+
+    def set_gripper_properties(self, collidable=False, measureable=False,
+                               renderable=False, detectable=False,
+                               cuttable=False, dynamic=False,
+                               respondable=False, visible=False):
+        """Sets misc. parameters of the gripper model in the sim."""
+        props = [collidable, measureable, renderable, detectable, cuttable,
+                 dynamic, respondable, visible]
+
+        # V-REP encodes these properties as 'not_xxxxx', so we'll just invert
+        # them here to make calls in the simulator straightforward
+        props = [not p for p in props]
+
+        empty_buff = bytearray()
+        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
+             vrep.sim_scripttype_childscript, 'setGripperProperties', props,
+             [], [], empty_buff, vrep.simx_opmode_blocking)
+
+        if r[0] != vrep.simx_return_ok:
+            raise Exception('Error setting gripper properties.')
 
     def query(self, frame_work2cam, frame_world2work,
               resolution=128, rgb_near_clip=0.2, rgb_far_clip=10.0,
@@ -316,6 +352,12 @@ class SimulatorInterface(object):
         2. Random number of lights
         3. Object texture / colour
         4. Workspace texture
+
+        Returns
+        -------
+        images: 4-d array of shape (1, channels, rows, cols), where channels
+            [0, 1, 2] = RGB, [3] = Depth, [4] = Object mask
+        frame_work2cam: 4x4 homogeneous transformat matrix from workspace to camera
         """
 
         # Force the camera to always be looking "upwards"
