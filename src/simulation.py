@@ -261,7 +261,7 @@ class SimulatorInterface(object):
         """Queries the simulator for current object pose WRT the workspace."""
         return self.get_pose_by_name('object')
 
-    def set_gripper_pose(self, frame_work2palm):
+    def set_gripper_pose(self, frame_work2palm, reset_config=True):
         """Sets the pose for the current object to be WRT the workspace frame.
 
         Setting gripper pose is a bit more intricate then the others, as since
@@ -272,7 +272,7 @@ class SimulatorInterface(object):
 
         empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'setGripperPose', [],
+             vrep.sim_scripttype_childscript, 'setGripperPose', [reset_config],
              frame, [], empty_buff, vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
@@ -336,6 +336,31 @@ class SimulatorInterface(object):
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting gripper properties.')
+
+    def set_gripper_kinematics_mode(self, mode='forward'):
+
+        joint_modes = ['forward', 'inverse']
+        if mode not in joint_modes:
+            raise Exception('Joint mode must be in %s'%joint_modes)
+
+        empty_buff = bytearray()
+        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
+             vrep.sim_scripttype_childscript, 'setJointKinematicsMode', [],
+             [], [mode], empty_buff, vrep.simx_opmode_blocking)
+
+        if r[0] != vrep.simx_return_ok:
+            raise Exception('Error setting gripper kinematics mode.')
+
+    def set_gripper_kinematics_target(self):
+        """Always set the targets to be current position of fingertips."""
+
+        empty_buff = bytearray()
+        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
+             vrep.sim_scripttype_childscript, 'setKinematicTargetPos', [],
+             [], [], empty_buff, vrep.simx_opmode_blocking)
+
+        if r[0] != vrep.simx_return_ok:
+            raise Exception('Error setting gripper kinematics targets.')
 
     def query(self, frame_work2cam, frame_world2work,
               resolution=128, rgb_near_clip=0.2, rgb_far_clip=10.0,

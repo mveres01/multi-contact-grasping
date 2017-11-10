@@ -153,6 +153,8 @@ end
 
 setGripperPose = function(inInts, inFloats, inStrings, inBuffer)
 
+	local reset_config = inInts[1]
+	
 	local pose = {inFloats[1], inFloats[2], inFloats[3], inFloats[4],
 		          inFloats[5], inFloats[6], inFloats[7], inFloats[8],
 				  inFloats[9], inFloats[10], inFloats[11], inFloats[12]}
@@ -163,8 +165,10 @@ setGripperPose = function(inInts, inFloats, inStrings, inBuffer)
 	local h_gripper_config_buffer = simGetIntegerSignal('h_gripper_config_buffer')
 
 	-- Reset the configuration of gripper and pose of grasp dummy
-	simSetConfigurationTree(h_gripper_config_buffer)
-
+	if reset_config == 1 then
+		simSetConfigurationTree(h_gripper_config_buffer)
+	end
+	
 	simSetObjectMatrix(h_gripper_dummy, h_workspace, pose)
 
 	resetHand(h_gripper_base)
@@ -207,6 +211,44 @@ setJointPositionByName = function(inInts, inFloats, inStrings, inBuffer)
 end
 
 
+setJointKinematicsMode = function(inInts, inFloats, inStrings, inBuffer)
+
+	local joints = simGetStringSignal('h_gripper_joints')
+	joints = simUnpackInt32Table(joints)
+	local mode = simGetJointMode(joints[1])
+	
+	if inStrings[1] == 'forward' then
+		mode = sim_jointmode_force
+	elseif inStrings[1] == 'inverse' then
+		mode = sim_jointmode_ik
+	end
+	
+	for i = 1, #joints, 1 do
+		simSetJointMode(joints[i], mode, 0)
+	end
+	return {}, {}, {}, ''
+end
+
+
+setKinematicTargetPos = function(inInts, inFloats, inStrings, inBuffer)
+	--- Reads current pose of fingertips, and sets kinematic Targets to coincident.
+	-- The typical scheme for calling this is:
+	-- setGripperFingerTips
+	-- setKinematicTargetPos
+	-- setGripperInverseKinematics ...
+	
+	local h_ik_contacts = simGetStringSignal('h_ik_contacts')
+	h_ik_contacts = simUnpackInt32Table(h_ik_contacts)
+	
+	local h_ik_targets = simGetStringSignal('h_ik_targets')
+	h_ik_targets = simUnpackInt32Table(h_ik_targets)
+	
+	local zeros = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	for i = 1, # h_ik_targets, 1 do
+		simSetObjectMatrix(h_ik_targets[i], h_ik_contacts[i], zeros)
+	end
+	return {}, {}, {}, ''
+end
 
 setGripperProperties = function(inInts, inFloats, inStrings, inBuffer)
 
@@ -505,7 +547,6 @@ if (sim_call_type == sim_childscriptcall_initialization) then
 	local h_gripper_base = simGetObjectHandle('BarrettHand')
 
 
-	local h_workspace = simGetObjectHandle('workspace')
 	local h_gripper_dummy = simGetObjectHandle('gripper_dummy')
 	local h_table_object = simGetObjectHandle('customizableTable_tableTop')
 	local h_camera_mask = simGetObjectHandle('kinect_mask')
@@ -514,16 +555,26 @@ if (sim_call_type == sim_childscriptcall_initialization) then
 	local h_camera_dummy = simGetObjectHandle('camera_dummy')
 	local h_gripper_config_buffer = simGetConfigurationTree(h_gripper_base)
 	local h_gripper_prox = simGetObjectHandle('BarrettHand_attachProxSensor')
-
+	local h_workspace = h_table_object
 	local h_lights = {simGetObjectHandle('DefaultLightA'),
 					  simGetObjectHandle('DefaultLightB'),
 					  simGetObjectHandle('DefaultLightC'),
 					  simGetObjectHandle('DefaultLightD')}
-
+					  
+	local h_ik_group = simGetIkGroupHandle('IKGroup')
+	local h_ik_contacts = {simGetObjectHandle('dummyTip0'),
+					  	   simGetObjectHandle('dummyTip1'),
+						   simGetObjectHandle('dummyTip2')}
+	local h_ik_targets = {simGetObjectHandle('dummyTarget0'),
+					  	  simGetObjectHandle('dummyTarget1'),
+						  simGetObjectHandle('dummyTarget2')}
+	
+					  
 	--- Given the name of the root of the gripper model, we traverse through all
 	-- components to find the contact points.
 	local h_gripper_contacts = {}
 	local h_gripper_respondable = {}
+	local h_gripper_joints = {}
 
 	-- Record initial gripper configuration so it can be reset for each trial.
 	local h_gripper_all = simGetObjectsInTree(h_gripper_base)
@@ -538,10 +589,11 @@ if (sim_call_type == sim_childscriptcall_initialization) then
 		if string.match(name, 'respondableContact') then
 			table.insert(h_gripper_contacts, h_gripper_all[k])
 		end
+		
+		if string.match(name, 'joint') then
+			table.insert(h_gripper_joints, h_gripper_all[k])
+		end
 	end
-
-	-- All info will be collected relative to this "workspace" location.
-	simSetObjectMatrix(h_workspace, -1, simGetObjectMatrix(h_table_object, -1))
 
 	-- ------------------- VISUALIZATION HANDLES ---------------------------
 
@@ -648,6 +700,8 @@ if (sim_call_type == sim_childscriptcall_initialization) then
 	simSetIntegerSignal('h_camera_depth', h_camera_depth)
 	simSetIntegerSignal('h_camera_dummy', h_camera_dummy)
 	simSetIntegerSignal('h_gripper_prox', h_gripper_prox)
+	simSetIntegerSignal('h_ik_group', h_ik_group)
+
 	simSetIntegerSignal('sphereContainer', sphereContainer)
 	simSetIntegerSignal('lineContainer', lineContainer)
 	simSetIntegerSignal('lineContainerRed', lineContainerRed)
@@ -662,12 +716,14 @@ if (sim_call_type == sim_childscriptcall_initialization) then
 	simSetStringSignal('h_gripper_contacts', simPackInt32Table(h_gripper_contacts))
 	simSetStringSignal('h_gripper_respondable', simPackInt32Table(h_gripper_respondable))
 	simSetStringSignal('h_gripper_all', simPackInt32Table(h_gripper_all))
-	simSetStringSignal('max_vel_accel_jerk', simPackFloatTable(max_vel_accel_jerk))
+	simSetStringSignal('h_gripper_joints', simPackInt32Table(h_gripper_joints))
+	simSetStringSignal('h_ik_contacts', simPackInt32Table(h_ik_contacts))
+	simSetStringSignal('h_ik_targets', simPackInt32Table(h_ik_targets))
 	simSetStringSignal('h_lights', simPackInt32Table(h_lights))
+	simSetStringSignal('max_vel_accel_jerk', simPackFloatTable(max_vel_accel_jerk))
 	simSetStringSignal('light_default_pos', simPackTable(light_default_pos))
 	simSetStringSignal('light_default_ori', simPackTable(light_default_ori))
-
-
+	
     -- Check where the data will come from
     local PORT_NUM = simGetStringParameter(sim_stringparam_app_arg1)
 
