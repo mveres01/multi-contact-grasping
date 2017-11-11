@@ -23,7 +23,6 @@ vrep.simxFinish(-1) # just in case, close all opened connections
 
 import simulation as SI
 
-
 sim = SI.SimulatorInterface(port=19999)
 
 
@@ -32,7 +31,7 @@ query_params = {'rgb_near_clip':0.01,
                 'rgb_far_clip':10.,
                 'depth_far_clip':1.25,
                 'camera_fov':70*np.pi/180,
-                'resolution':128,
+                'resolution':256,
                 'p_light_off':0.25,
                 'p_light_mag':0.1,
                 'reorient_up':True,
@@ -109,7 +108,14 @@ def is_valid_image(mask, num_pixel_thresh=400):
 def get_minibatch(grasps, props, index, num_views):
     """Performs multithreading to query V-REP simulations for image + grasps."""
 
-    sim_images, sim_grasps, sim_work2cam = [], [], []
+    q_non_random = query_params.copy()
+    for key in q_non_random:
+        if 'randomize' in key:
+            q_non_random[key] = False
+    q_non_random['reorient_up'] = False
+
+
+    sim_images_reg, sim_images_grasp, sim_grasps, sim_work2cam = [], [], [], []
 
     # TODO: A little hacky. Try to clean this up so the full path is specified,
     # or object with full extension is given in dataset.
@@ -118,70 +124,89 @@ def get_minibatch(grasps, props, index, num_views):
 
     # These properties don't matter too much since we're not going to be
     # dynamically simulating the object
+    frame_world2work = props['frame_world2work'][index]
+    frame_work2obj = props['frame_work2obj'][index]
+    frame_work2palm = props['frame_work2palm'][index]
+    frame_work2palm = lib.utils.format_htmatrix(frame_work2palm)
+
+    mass = props['mass_workspace_wrt_world'][index]
     com = props['com_workspace_wrt_world'][index]
     inertia = props['inertia_workspace_wrt_world'][index]
-    mass = props['mass_workspace_wrt_world'][index]
 
     sim.load_object(object_path, com, mass, inertia)
 
-    sim.set_object_pose(props['frame_work2obj'][index])
+    sim.set_object_pose(frame_work2obj)
 
-
-    sim.set_gripper_pose(props['frame_work2palm'][index])
+    # Collect images of the object by itself, and the pre-grasp that was applied.
+    # Set the gripper pose (won't change), but toggle between being visible / invisible
+    sim.set_gripper_pose(frame_work2palm)
     for key in props.keys():
         if 'joint' not in key:
             continue
         pos = float(props[key][index, 0])
-        name = key.split('_pos')[0]
-        name = str(name)
-        print name, pos
+        name = str(key.split('_pos')[0])
         sim.set_joint_position_by_name(name, pos)
-    sim.set_gripper_properties(visible=True, renderable=True, dynamic=False)
+    sim.set_gripper_properties(visible=False, renderable=False, dynamic=False)
 
+    # For each successful grasp, we'll do a few randomizations of camera / obj
+    for count in xrange(num_views):
 
+        sim.set_gripper_properties(visible=False, renderable=False, dynamic=False)
 
-    for _ in xrange(num_views):
-
-        count, maxcount = 0, 5
         while True:
 
             # We'll use the pose of where the grasp succeeded from as an
             # initial seedpoint for collecting images. For each image, we
             # slightly randomize the cameras pose.
-            frame_work2palm = lib.utils.format_htmatrix(props['frame_work2palm'][index])
-
             frame_work2cam = lib.utils.randomize_pose(frame_work2palm, **pose_params)
 
-
             if frame_work2cam[11] <= 0.2:
-                print ('Camera Z is too low / potentially below table. '\
-                       'Re-randomizing pose and collecting new image.')
                 continue
 
             # Query simulator for an image & return camera pose
-            image, frame_work2cam_ht = sim.query(frame_work2cam,
-                                                 props['frame_world2work'][index],
-                                                 **query_params)
+            image, frame_work2cam_ht = \
+                sim.query(frame_work2cam, frame_world2work, **query_params)
 
             if image is None:
                 raise Exception('No image returned.')
             if is_valid_image(image[0, 4], num_pixel_thresh=600):
-                break
 
-            print('Collecting new image. Current image either exists past ' \
-                  'the boundaries or is too small.')
+
+                # Query simulator for an image & return camera pose
+                sim.set_gripper_properties(visible=True, renderable=True, dynamic=False)
+
+                image2, _ = sim.query(frame_work2cam_ht[:3].flatten(),
+                                      props['frame_world2work'][index],
+                                      **q_non_random)
+
+
+                from scipy import misc
+                _, channels, num_rows, num_cols = image.shape
+                fig = np.zeros((num_rows, num_cols*2, 3))
+                fig[:, :num_cols] = image[0, :3].transpose(1, 2, 0)
+                fig[:, num_cols:] = image2[0, :3].transpose(1, 2, 0)
+
+                save_path = 'grasp_images'
+                if not os.path.exists(save_path):
+                    os.makedirs(save_path)
+                name = str(props['object_name'][index, 0])
+                name = '%d_%d_%s.png'%(index, count, name)
+                save_path = os.path.join(save_path, name)
+                misc.imsave(save_path, fig)
+
+                break
 
         frame_cam2work_ht = lib.utils.invert_htmatrix(frame_work2cam_ht)
         grasp = lib.utils.convert_grasp_frame(frame_cam2work_ht, grasps[index])
         time.sleep(0.1)
 
         sim_grasps.append(np.float32(grasp))
-        sim_images.append(np.float32(image))
+        sim_images_reg.append(np.float16(image))
+        sim_images_grasp.append(np.float16(image2))
         sim_work2cam.append(np.float32(frame_work2cam_ht[:3].flatten()))
 
-    return np.vstack(sim_images), np.vstack(sim_grasps), np.vstack(sim_work2cam)
-
-
+    return (np.vstack(sim_images_reg), np.vstack(sim_images_grasp),
+            np.vstack(sim_grasps), np.vstack(sim_work2cam) )
 
 
 
@@ -198,7 +223,8 @@ def create_dataset(inputs, input_props, num_views, dataset_name):
     gr_shape = (inputs.shape[0] * num_views, inputs.shape[1])
     mx_shape = (inputs.shape[0] * num_views, 12)
 
-    dset_im = f.create_dataset('images', im_shape, dtype='float16')
+    dset_im_reg = f.create_dataset('images', im_shape, dtype='float16')
+    dset_im_grasp = f.create_dataset('image_w_grasp', im_shape, dtype='float16')
     dset_gr = f.create_dataset('grasps', gr_shape)
 
     group = f.create_group('props')
@@ -215,36 +241,30 @@ def create_dataset(inputs, input_props, num_views, dataset_name):
 
     # Loop through our collected data, and query the sim for an image and
     # grasp transformed to the camera's frame
-    batch_size = 1
-    indices = np.arange(len(inputs))
-
-
     save_indices = np.arange(len(inputs) * num_views)
     np.random.shuffle(save_indices)
 
-    for idx in range(0, len(indices)):
+    for idx in range(0, len(inputs)):
 
         print idx, ' / ', len(inputs)
 
         # Query simulator for data
-        q_images, q_grasps, q_work2cam = \
+        q_images_reg, q_images_grasp, q_grasps, q_work2cam = \
             get_minibatch(inputs, input_props, idx, num_views)
-
-        '''
 
         # We save the queried information in a "shuffled" manner, so grasps
         # for the same object are spread throughout the dataset
         low = idx * num_views
-        high = (idx + batch_size) * num_views
+        high = (idx + 1) * num_views
 
         for i, save_i in enumerate(save_indices[low:high]):
-            dset_im[save_i] = q_images[i]
+            dset_im_reg[save_i] = q_images_reg[i]
+            dset_im_grasp[save_i] = q_images_grasp[i]
             dset_gr[save_i] = q_grasps[i]
 
             for key in input_props.keys():
                 group[key][save_i] = input_props[key][idx]
             group['frame_work2cam'][save_i] = q_work2cam[i]
-        '''
 
     f.close()
 
@@ -270,48 +290,41 @@ def get_equalized_idx(name_array, max_samples=250, idx_mask=None):
     return np.asarray(copy_idx)
 
 
-def load_dataset(fname, n_train=-5, shuffle=True):
-    """Loads the dataset. For now, we split 'train' into train + validation."""
-
-    f = h5py.File(fname, 'r')
-
-    object_keys = f.keys()
-    train_keys = object_keys[:n_train]
-    valid_keys = object_keys[n_train:]
-
-    train_grasps, train_props = load_subset(f, train_keys, shuffle)
-    valid_grasps, valid_props = load_subset(f, valid_keys, shuffle)
-
-    return train_grasps, train_props, valid_grasps, valid_props
 
 if __name__ == '__main__':
 
     np.random.seed(1234)
-    batch_views = 10
-    max_samples = 250
+    batch_views = 5
+    max_samples = 150
     max_valid_samples = 10
+    n_test_objects = 2
+    shuffle_data = False
 
-    print 'Loading dataset ... '
-    y_train, train_props, y_test, test_props = \
-        load_dataset(config_dataset_path, shuffle=False)
+    f = h5py.File(config_dataset_path, 'r')
+
+    object_keys = [k for k in f.keys() if 'box' in k]
+    train_keys = object_keys[:-n_test_objects]
+    test_keys = object_keys[-n_test_objects:]
+
+
+    train_grasps, train_props = load_subset(f, train_keys, shuffle_data)
 
     names = train_props['object_name']
-
-
     valid_idx = get_equalized_idx(names, max_samples=max_valid_samples)
-    y_valid = y_train[valid_idx]
-    props_valid = {p:train_props[p][valid_idx] for p in train_props}
+    y_valid = train_grasps[valid_idx]
+    props_valid = {p: train_props[p][valid_idx] for p in train_props}
 
     create_dataset(y_valid, props_valid, batch_views, 'collectValid256.hdf5')
 
 
     train_idx = get_equalized_idx(names, max_samples=max_samples, idx_mask=valid_idx)
-    y_train = y_train[train_idx]
-    props_train = {p:train_props[p][train_idx] for p in train_props}
+    y_train = train_grasps[train_idx]
+    props_train = {p: train_props[p][train_idx] for p in train_props}
 
     create_dataset(y_train, props_train, batch_views, 'collectTrain256.hdf5')
 
 
+    test_grasps, test_props = load_subset(f, test_keys, shuffle_data)
     names = test_props['object_name']
     equal_idx = get_equalized_idx(names, max_samples=max_samples)
 

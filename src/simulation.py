@@ -238,7 +238,7 @@ class SimulatorInterface(object):
         elif '.stl' in object_path: # 3 is regular stl, 4 is binary stl & default
             file_format = 4
         else:
-            raise Exception('File format must be in [.obj, .stl]')
+            raise Exception('File format must be in {.obj, .stl}')
 
         in_floats = []
         in_floats.extend(com)
@@ -321,7 +321,12 @@ class SimulatorInterface(object):
                                renderable=False, detectable=False,
                                cuttable=False, dynamic=False,
                                respondable=False, visible=False):
-        """Sets misc. parameters of the gripper model in the sim."""
+        """Sets misc. parameters of the gripper model in the sim.
+
+        This is used to accomplish things such as: moving the gripper without
+        colliding with anything, setting it to be visible & being captured
+        by the cameras, static so fingers don't move, etc ...
+        """
         props = [collidable, measureable, renderable, detectable, cuttable,
                  dynamic, respondable, visible]
 
@@ -362,7 +367,7 @@ class SimulatorInterface(object):
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting gripper kinematics targets.')
 
-    def query(self, frame_work2cam, frame_world2work,
+    def query(self, frame_work2cam, frame_world2work=None,
               resolution=128, rgb_near_clip=0.2, rgb_far_clip=10.0,
               depth_far_clip=1.25, depth_near_clip=0.2, p_light_off=0.25,
               p_light_mag=0.1, camera_fov=70*np.pi/180., reorient_up=True,
@@ -385,10 +390,18 @@ class SimulatorInterface(object):
         frame_work2cam: 4x4 homogeneous transformat matrix from workspace to camera
         """
 
+        if randomize_texture and not os.path.exists(texture_path):
+            print('Cannot find <%s> in system, not randomizing textures.')
+            randomize_texture = False
+
         # Force the camera to always be looking "upwards"
         if reorient_up:
-            frame_work2cam = lib.utils.reorient_up_direction( \
-                frame_work2cam, frame_world2work, direction_up=[0, 0, 1])
+            if frame_world2work is not None:
+                frame_work2cam = lib.utils.reorient_up_direction( \
+                    frame_work2cam, frame_world2work, direction_up=[0, 0, 1])
+            else:
+                print('Must provide <frame_world2work> in order to reorient '
+                      'the cameras y-direction to be upwards.')
         frame_work2cam = self._format_matrix(frame_work2cam)
 
         in_ints = [resolution]
@@ -535,11 +548,10 @@ if __name__ == '__main__':
     import h5py
     from lib.python_config import config_mesh_dir
 
-    #GLOBAL_DATAFILE = '/scratch/mveres/grasping-cvae-multi/valid256.hdf5'
-    GLOBAL_DATAFILE = 'C:/Users/Matt/Documents/grasping-multi-view/learning/valid256.hdf5'
+    GLOBAL_DATAFILE = '/scratch/mveres/grasping-cvae-multi/valid256.hdf5'
 
 
-    sim = SimulatorInterface(port=19999)
+    sim = SimulatorInterface(port=19000)
 
 
     # Load the data. Note that Grasps are encoded WRT workspace frame
@@ -579,6 +591,9 @@ if __name__ == '__main__':
         if frame_work2cam_ht is not None:
             frame_cam2work_ht = lib.utils.invert_htmatrix(frame_work2cam_ht)
             grasp = lib.utils.convert_grasp_frame(frame_cam2work_ht, grasps[i])
+
+        print 'Running?: ', sim.is_running()
+
 
         '''
         sim.view_grasp(props['frame_world2work'][i],

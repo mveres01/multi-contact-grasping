@@ -321,25 +321,22 @@ def reorient_up_direction(work2cam, world2work, direction_up, world2point=None):
         raise Exception('param :direction_up: must be of type <list>')
 
     world_up = np.asarray(direction_up)
+    world_up = normalize_vector(world_up)
 
     world2cam = np.dot(world2work, work2cam)
     cam2world = invert_htmatrix(world2cam)
 
     # Look at a point along the camera normal (z-direction)
-    world2cam_z = world2cam[:3, 2]
     if world2point is None:
         point2lookat = format_point(world2cam[:3, 2])
     else:
         point2lookat = format_point(world2point)
 
-    # Calculate Direction (D) and Up vector (U).
-    D = np.dot(cam2world[:3, :3], world2cam_z)
-    D = normalize_vector(D)
-
+    # Calculate Up vector (U).
     U = np.dot(cam2world[:3, :3], world_up)
     U = normalize_vector(U)
 
-    right = np.cross(U, D)
+    right = np.cross(U, world_up)
     right = normalize_vector(right)
 
     backwards = np.cross(right, U)
