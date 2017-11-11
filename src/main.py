@@ -127,7 +127,7 @@ def generate_candidates(mesh, num_samples=1000, noise_level=0.05,
 def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
                    num_candidates=1000, candidate_noise_level=0.05,
                    num_random_per_candidate=5,
-                   candidate_offset=-0.08):
+                   candidate_offset=-0.07):
 
     # Get the paths & structures set up for saving results
     if not os.path.exists(config_collected_data_dir):
@@ -207,7 +207,6 @@ def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
 
             if success is False: # Only save successful grasps
                 continue
-
 
             # Create initial structures if dataset is currently empty
             if len(pregrasp_group) == 0:

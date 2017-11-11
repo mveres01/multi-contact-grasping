@@ -535,10 +535,11 @@ if __name__ == '__main__':
     import h5py
     from lib.python_config import config_mesh_dir
 
-    GLOBAL_DATAFILE = '/scratch/mveres/grasping-cvae-multi/valid256.hdf5'
+    #GLOBAL_DATAFILE = '/scratch/mveres/grasping-cvae-multi/valid256.hdf5'
+    GLOBAL_DATAFILE = 'C:/Users/Matt/Documents/grasping-multi-view/learning/valid256.hdf5'
 
 
-    sim = SimulatorInterface(port=19000)
+    sim = SimulatorInterface(port=19999)
 
 
     # Load the data. Note that Grasps are encoded WRT workspace frame
@@ -578,9 +579,6 @@ if __name__ == '__main__':
         if frame_work2cam_ht is not None:
             frame_cam2work_ht = lib.utils.invert_htmatrix(frame_work2cam_ht)
             grasp = lib.utils.convert_grasp_frame(frame_cam2work_ht, grasps[i])
-
-        print 'Running?: ', sim.is_running()
-
 
         '''
         sim.view_grasp(props['frame_world2work'][i],

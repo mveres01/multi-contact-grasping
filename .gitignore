@@ -1,5 +1,14 @@
+*.hdf5
+*.obj
 *.stl
 *.ply
-*.pyc
-*.so
+*.png
+*.jpg
+*.txt
 *.exe
+*.ini
+*.pyc
+*.ttt
+*.ttm
+*.dll
+*.mlx

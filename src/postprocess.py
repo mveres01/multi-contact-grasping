@@ -44,12 +44,6 @@ def get_outlier_mask(data_in, sigma=3):
 def postprocess(h5_pregrasp, h5_postgrasp):
     """Standardizes data by removing outlier grasps."""
 
-    pregrasp, postgrasp = {}, {}
-    for key, val in h5_pregrasp.iteritems():
-        pregrasp[key] = val[:]
-    for key, val in h5_postgrasp.iteritems():
-        postgrasp[key] = val[:]
-
     def remove_from_dataset(dataset, indices):
         """Convenience function for filtering bad indices from dataset."""
         for key, value in dataset.iteritems():
@@ -59,6 +53,12 @@ def postprocess(h5_pregrasp, h5_postgrasp):
             else:
                 dataset[key] = dataset[key][indices]
         return dataset
+
+    pregrasp, postgrasp = {}, {}
+    for key, val in h5_pregrasp.iteritems():
+        pregrasp[key] = val[:]
+    for key, val in h5_postgrasp.iteritems():
+        postgrasp[key] = val[:]
 
     if len(pregrasp) == 0 or len(postgrasp) == 0:
         return None, None

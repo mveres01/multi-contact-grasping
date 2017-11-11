@@ -229,7 +229,6 @@ function getGraspInformation(all_in_contact, contactsInfo, object_tree,
 									frame_work2palm[8],
 									frame_work2palm[12]}
 
-
     local frame_world2work = simGetObjectMatrix(h_workspace, -1)
 
     -- Also save the mass, inertia, and center of mass of the object
@@ -383,7 +382,7 @@ threadCollectionFunction = function()
 					-- position to a final gripper position. To perform
 					-- this 'lift' action, we manually follow the path by
 					-- manually setting the new position at each time step.
-					local p0 = simGetObjectPosition(h_gripper_base, -1)
+					local p0 = simGetObjectPosition(h_gripper_palm, -1)
 					local pt = simGetObjectPosition(h_workspace, -1)
 					local targetPosVel = {pt[1], pt[2], pt[3] + 0.5, 0, 0, 0}
 					local posVelAccel = {p0[1], p0[2], p0[3], 0, 0, 0, 0, 0, 0, 0}
@@ -397,7 +396,7 @@ threadCollectionFunction = function()
 					while res == 0 do
 						dt = simGetSimulationTimeStep()
 						res, posVelAccel, sync = simRMLStep(rmlHandle,dt)
-						simSetObjectPosition(h_gripper_base, -1, posVelAccel)
+						simSetObjectPosition(h_gripper_palm, -1, posVelAccel)
 						simSwitchThread()
 					end
 					simRMLRemove(rmlHandle)

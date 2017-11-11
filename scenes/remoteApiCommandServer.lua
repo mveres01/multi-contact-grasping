@@ -154,7 +154,7 @@ end
 setGripperPose = function(inInts, inFloats, inStrings, inBuffer)
 
 	local reset_config = inInts[1]
-	
+
 	local pose = {inFloats[1], inFloats[2], inFloats[3], inFloats[4],
 		          inFloats[5], inFloats[6], inFloats[7], inFloats[8],
 				  inFloats[9], inFloats[10], inFloats[11], inFloats[12]}
@@ -168,7 +168,7 @@ setGripperPose = function(inInts, inFloats, inStrings, inBuffer)
 	if reset_config == 1 then
 		simSetConfigurationTree(h_gripper_config_buffer)
 	end
-	
+
 	simSetObjectMatrix(h_gripper_dummy, h_workspace, pose)
 
 	resetHand(h_gripper_base)
@@ -216,13 +216,13 @@ setJointKinematicsMode = function(inInts, inFloats, inStrings, inBuffer)
 	local joints = simGetStringSignal('h_gripper_joints')
 	joints = simUnpackInt32Table(joints)
 	local mode = simGetJointMode(joints[1])
-	
+
 	if inStrings[1] == 'forward' then
 		mode = sim_jointmode_force
 	elseif inStrings[1] == 'inverse' then
 		mode = sim_jointmode_ik
 	end
-	
+
 	for i = 1, #joints, 1 do
 		simSetJointMode(joints[i], mode, 0)
 	end
@@ -236,13 +236,13 @@ setKinematicTargetPos = function(inInts, inFloats, inStrings, inBuffer)
 	-- setGripperFingerTips
 	-- setKinematicTargetPos
 	-- setGripperInverseKinematics ...
-	
+
 	local h_ik_contacts = simGetStringSignal('h_ik_contacts')
 	h_ik_contacts = simUnpackInt32Table(h_ik_contacts)
-	
+
 	local h_ik_targets = simGetStringSignal('h_ik_targets')
 	h_ik_targets = simUnpackInt32Table(h_ik_targets)
-	
+
 	local zeros = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	for i = 1, # h_ik_targets, 1 do
 		simSetObjectMatrix(h_ik_targets[i], h_ik_contacts[i], zeros)
@@ -252,7 +252,7 @@ end
 
 setGripperProperties = function(inInts, inFloats, inStrings, inBuffer)
 
-	local model_properties = {sim_modelproperty_not_collidable, 
+	local model_properties = {sim_modelproperty_not_collidable,
 							  sim_modelproperty_not_measurable,
 							  sim_modelproperty_not_renderable,
 							  sim_modelproperty_not_detectable,
@@ -260,7 +260,7 @@ setGripperProperties = function(inInts, inFloats, inStrings, inBuffer)
 							  sim_modelproperty_not_dynamic,
 							  sim_modelproperty_not_respondable,
 							  sim_modelproperty_not_visible}
-							  
+
 	if #inInts ~= #model_properties then
 		print('Number of model properties != # input properties.')
 		print('setGripperProperties requires the following parameters in order:')
@@ -285,7 +285,7 @@ setGripperProperties = function(inInts, inFloats, inStrings, inBuffer)
 	end
 	return {}, {}, {}, ''
 end
-	
+
 loadObject = function(inInts, inFloats, inStrings, inBuffer)
 
 	local file_format = inInts[1]
@@ -560,7 +560,7 @@ if (sim_call_type == sim_childscriptcall_initialization) then
 					  simGetObjectHandle('DefaultLightB'),
 					  simGetObjectHandle('DefaultLightC'),
 					  simGetObjectHandle('DefaultLightD')}
-					  
+
 	local h_ik_group = simGetIkGroupHandle('IKGroup')
 	local h_ik_contacts = {simGetObjectHandle('dummyTip0'),
 					  	   simGetObjectHandle('dummyTip1'),
@@ -568,8 +568,8 @@ if (sim_call_type == sim_childscriptcall_initialization) then
 	local h_ik_targets = {simGetObjectHandle('dummyTarget0'),
 					  	  simGetObjectHandle('dummyTarget1'),
 						  simGetObjectHandle('dummyTarget2')}
-	
-					  
+
+
 	--- Given the name of the root of the gripper model, we traverse through all
 	-- components to find the contact points.
 	local h_gripper_contacts = {}
@@ -589,7 +589,7 @@ if (sim_call_type == sim_childscriptcall_initialization) then
 		if string.match(name, 'respondableContact') then
 			table.insert(h_gripper_contacts, h_gripper_all[k])
 		end
-		
+
 		if string.match(name, 'joint') then
 			table.insert(h_gripper_joints, h_gripper_all[k])
 		end
@@ -723,7 +723,7 @@ if (sim_call_type == sim_childscriptcall_initialization) then
 	simSetStringSignal('max_vel_accel_jerk', simPackFloatTable(max_vel_accel_jerk))
 	simSetStringSignal('light_default_pos', simPackTable(light_default_pos))
 	simSetStringSignal('light_default_ori', simPackTable(light_default_ori))
-	
+
     -- Check where the data will come from
     local PORT_NUM = simGetStringParameter(sim_stringparam_app_arg1)
 
