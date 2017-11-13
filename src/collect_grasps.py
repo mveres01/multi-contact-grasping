@@ -11,6 +11,7 @@ from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
+import lib
 import lib.utils
 from lib.python_config import (config_mesh_dir, config_collected_data_dir)
 
@@ -256,9 +257,8 @@ if __name__ == '__main__':
         process = int(process)
         os.kill(process, signal.SIGTERM)
     else:
-        #meshes = glob.glob(os.path.join(config_mesh_dir, '*.stl'))
-        meshes = glob.glob(os.path.join(config_mesh_dir, 'bowling_pin_poisson_000.stl'))
-        sim = SI.SimulatorInterface(port=19999)
+        meshes = glob.glob(os.path.join(config_mesh_dir, '*.stl'))
+        sim = SI.SimulatorInterface(port=19997)
         for m in meshes:
             mesh_path = os.path.join(config_mesh_dir, m)
             print 'mesh_path: ', mesh_path

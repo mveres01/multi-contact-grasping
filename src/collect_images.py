@@ -16,14 +16,12 @@ from lib.python_config import (config_simulation_path,
                                config_dataset_path,
                                config_mesh_dir,
                                project_dir)
-
-import vrep
+from lib import vrep
 vrep.simxFinish(-1) # just in case, close all opened connections
 
 import simulation as SI
 
 sim = SI.SimulatorInterface(port=19999)
-
 
 query_params = {'rgb_near_clip':0.01,
                 'depth_near_clip':0.01,
@@ -301,34 +299,5 @@ if __name__ == '__main__':
 
     f = h5py.File(config_dataset_path, 'r')
 
-    object_keys = [k for k in f.keys() if 'box' in k]
-    train_keys = object_keys[:-n_test_objects]
-    test_keys = object_keys[-n_test_objects:]
-
-
-    train_grasps, train_props = load_subset(f, train_keys, shuffle_data)
-
-    names = train_props['object_name']
-
-    valid_idx = get_equalized_idx(names, max_samples=max_valid_samples)
-    y_valid = train_grasps[valid_idx]
-    props_valid = {p: train_props[p][valid_idx] for p in train_props}
-
-    #create_dataset(y_valid, props_valid, batch_views, 'collectValid256.hdf5')
-
-
-    train_idx = get_equalized_idx(names, max_samples=max_samples, idx_mask=valid_idx)
-    y_train = train_grasps[train_idx]
-    props_train = {p: train_props[p][train_idx] for p in train_props}
-
-    create_dataset(y_train, props_train, batch_views, 'collectTrain256.hdf5')
-
-
-    test_grasps, test_props = load_subset(f, test_keys, shuffle_data)
-    names = test_props['object_name']
-    equal_idx = get_equalized_idx(names, max_samples=max_samples)
-
-    test = y_test[equal_idx]
-    props = {p:test_props[p][equal_idx] for p in test_props}
-
-    create_dataset(test, props, batch_views, 'collectTest256.hdf5')
+    grasps, props = load_subset(f, f.keys(), shuffle_data)
+    create_dataset(grasps, props, batch_views, 'dataset.hdf5')

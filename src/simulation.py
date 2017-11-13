@@ -10,7 +10,7 @@ import trimesh.transformations as tf
 import lib
 import lib.utils
 from lib.python_config import project_dir, config_simulation_path
-import vrep
+from lib import vrep
 vrep.simxFinish(-1)
 
 
