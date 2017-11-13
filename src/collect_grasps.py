@@ -142,21 +142,20 @@ def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
     pregrasp_group = datafile.create_group('pregrasp')
     postgrasp_group = datafile.create_group('postgrasp')
 
-
-
     # Load the mesh from file here, so we can generate grasp candidates
-    # and access object-specific properties like inertia.
+    # and access object-specifsc properties like inertia.
     mesh = load_mesh(mesh_path)
-
-    com = mesh.mass_properties['center_mass']
-    inertia = mesh.mass_properties['inertia'].flatten()
 
     candidates = generate_candidates(mesh, num_samples=num_candidates,
                                      noise_level=candidate_noise_level,
                                      gripper_offset=candidate_offset)
 
+
+
     # Compute an initial object resting pose by dropping the object from a
     # given position / height above the workspace table
+    com = mesh.mass_properties['center_mass']
+    inertia = mesh.mass_properties['inertia'].flatten()
     sim.load_object(mesh_path, com, mass, inertia*5)
 
     initial_pose = sim.get_object_pose()
@@ -176,9 +175,8 @@ def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
 
         work2candidate = np.dot(object_pose, lib.utils.format_htmatrix(row))
 
-        # Don't want to try grasps where the gripper would be below the table
-        direction = np.dot(work2candidate[:3, :3], np.atleast_2d([0, 0, 1]).T)
-        if direction[2] * 10 > 0.:
+        # Want the candidates to be above the table + a little leeway
+        if work2candidate[2, 3] <= 0.03:
             continue
 
         for _ in xrange(num_random_per_candidate):
@@ -190,7 +188,7 @@ def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
             # rotation between [0, 360) degress around local z
             random_pose = lib.utils.randomize_pose(work2candidate,
                                                    offset_mag=0.03,
-                                                   local_rot=(0, 0, 359))
+                                                   local_rot=(10, 10, 359))
             sim.set_gripper_pose(random_pose)
 
             # Try to grasp and lift the object. If the gripper during pre-grasp
@@ -208,19 +206,21 @@ def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
             if success is False: # Only save successful grasps
                 continue
 
-            # Create initial structures if dataset is currently empty
+            # Create initial structures if dataset is currently empty, then
+            # save grasp attempt
             if len(pregrasp_group) == 0:
                 for key, val in pregrasp.iteritems():
                     initial = (1, val.shape[-1])
                     maxshape = (None, val.shape[-1])
                     pregrasp_group.create_dataset(key, initial, maxshape=maxshape)
                     postgrasp_group.create_dataset(key, initial, maxshape=maxshape)
+                datafile.create_dataset('mesh', data=mesh_path)
 
             for key, val in pregrasp.iteritems():
-                pregrasp_group[key].resize((num_successful_grasps+1, val.shape[-1]))
+                pregrasp_group[key].resize((num_successful_grasps + 1, val.shape[-1]))
                 pregrasp_group[key][num_successful_grasps] = val
             for key, val in postgrasp.iteritems():
-                postgrasp_group[key].resize((num_successful_grasps+1, val.shape[-1]))
+                postgrasp_group[key].resize((num_successful_grasps + 1, val.shape[-1]))
                 postgrasp_group[key][num_successful_grasps] = val
 
             num_successful_grasps += 1
@@ -234,6 +234,7 @@ if __name__ == '__main__':
     from subprocess import check_output
     import signal
     import time
+
     if len(sys.argv) > 1:
 
         port = None

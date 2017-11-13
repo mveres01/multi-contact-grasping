@@ -31,9 +31,11 @@ def is_listening(ip='127.0.0.1', port=19997):
 
 
 def wait_for_signal(clientID, signal, mode=vrep.simx_opmode_oneshot_wait):
+    """Waits for a signal from V-REP before continuing main client code."""
     r = -1
     while r != vrep.simx_return_ok:
         r, data = vrep.simxGetStringSignal(clientID, signal, mode)
+        time.sleep(0.1)
     return data
 
 
@@ -179,8 +181,8 @@ class SimulatorInterface(object):
     def _clear_signals(self, mode=vrep.simx_opmode_oneshot):
         """Clears all signals this script can set in the simulation."""
 
-        vrep.simxClearStringSignal(self.clientID, 'object_resting', mode)
         vrep.simxClearStringSignal(self.clientID, 'run_drop_object', mode)
+        vrep.simxClearIntegerSignal(self.clientID, 'object_resting', mode)
         vrep.simxClearIntegerSignal(self.clientID, 'run_grasp_attempt', mode)
         vrep.simxClearStringSignal(self.clientID, 'header', mode)
         vrep.simxClearStringSignal(self.clientID, 'pregrasp', mode)
@@ -199,9 +201,9 @@ class SimulatorInterface(object):
         """Tells a VREP scene to start execution."""
 
         if self.clientID is None or self.clientID == -1:
-            raise Exception('Unable to start the simulation scene. This is '\
-                            'likely a result of not being connected to the '\
-                            'simulator. Try reconnecting and start again.')
+            raise Exception('Client is not connected to V-REP server, so '\
+                            'start the simulation. Check the sim is running, '\
+                            'and try connecting again.')
 
         r = vrep.simxStartSimulation(self.clientID, vrep.simx_opmode_blocking)
 
@@ -211,7 +213,7 @@ class SimulatorInterface(object):
 
     @staticmethod
     def _format_matrix(matrix_in):
-        """Formats input matrices to V-REP as a lists of 12 components."""
+        """Formats input matrices to V-REP as a list of 12 components."""
 
         matrix = matrix_in
         if not isinstance(matrix, np.ndarray):
@@ -267,7 +269,6 @@ class SimulatorInterface(object):
         Setting gripper pose is a bit more intricate then the others, as since
         it's a dynamic object,
         """
-
         frame = self._format_matrix(frame_work2palm)
 
         empty_buff = bytearray()
@@ -443,8 +444,15 @@ class SimulatorInterface(object):
         enables the object to be dynamically simulated, and allows it to fall
         to the ground and come to a resting pose. This is usually the first
         step when collecting grasps.
+
+        Note that we also set the gripper to be non-collidable / respondable,
+        so it doesn't interfere with the drop process
         """
+
         self._clear_signals()
+
+        self.set_gripper_properties(visible=True, renderable=False,
+                                    dynamic=True, collidable=False)
 
         frame = self._format_matrix(frame_work2obj)
 
@@ -457,7 +465,6 @@ class SimulatorInterface(object):
         while r != vrep.simx_return_ok:
             r, success = vrep.simxGetIntegerSignal(
                 self.clientID, 'object_resting', vrep.simx_opmode_oneshot_wait)
-        self._clear_signals()
 
         if success == 0:
             raise Exception('Error dropping object!')
@@ -469,11 +476,17 @@ class SimulatorInterface(object):
         values for the pre- and post-grasp will be returned. Otherwise, a {-1}
         will be returned (grasp was attempted, but initial fingers weren't in
         contact with the object).
+
+        Note that we also set the gripper to be collidable & respondable so it
+        is able to interact with the object & table.
         """
 
         # The simulator is going to send these signals back to us, so clear them
         # to make sure we're not accidentally reading old values
         self._clear_signals()
+
+        self.set_gripper_properties(visible=True, dynamic=True,
+                                    collidable=True, respondable=True)
 
         # Launch the grasp process and wait for a return value
         vrep.simxSetIntegerSignal(self.clientID, 'run_grasp_attempt',
@@ -482,8 +495,6 @@ class SimulatorInterface(object):
         header = wait_for_signal(self.clientID, 'header')
         pregrasp = wait_for_signal(self.clientID, 'pregrasp')
         postgrasp = wait_for_signal(self.clientID, 'postgrasp')
-
-        self._clear_signals()
 
         # Decode the results into a dictionary
         header = header.lstrip('{').rstrip('}')
@@ -549,7 +560,6 @@ if __name__ == '__main__':
     from lib.python_config import config_mesh_dir
 
     GLOBAL_DATAFILE = '/scratch/mveres/grasping-cvae-multi/valid256.hdf5'
-
 
     sim = SimulatorInterface(port=19000)
 

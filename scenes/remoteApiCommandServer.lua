@@ -261,6 +261,8 @@ setGripperProperties = function(inInts, inFloats, inStrings, inBuffer)
                               sim_modelproperty_not_respondable,
                               sim_modelproperty_not_visible}
 
+    local h_gripper_base = simGetIntegerSignal('h_gripper_base')
+
     if #inInts ~= #model_properties then
         print('Number of model properties != # input properties.')
         print('setGripperProperties requires the following parameters in order:')
@@ -273,8 +275,6 @@ setGripperProperties = function(inInts, inFloats, inStrings, inBuffer)
         print('sim_modelproperty_not_respondable')
         print('sim_modelproperty_not_visible')
     else
-        local h_gripper_base = simGetIntegerSignal('h_gripper_base')
-
         local props = 0
         for i = 1, #inInts, 1 do
             if inInts[i] == 1 then
@@ -283,6 +283,8 @@ setGripperProperties = function(inInts, inFloats, inStrings, inBuffer)
         end
         simSetModelProperty(h_gripper_base, props)
     end
+    resetHand(h_gripper_base)
+
     return {}, {}, {}, ''
 end
 
@@ -580,7 +582,7 @@ if (sim_call_type == sim_childscriptcall_initialization) then
     local h_gripper_all = simGetObjectsInTree(h_gripper_base)
 
     for k = 1, #h_gripper_all, 1 do
-        local _, res =simGetObjectInt32Parameter(h_gripper_all[k], 
+        local _, res =simGetObjectInt32Parameter(h_gripper_all[k],
                                                  sim_shapeintparam_respondable)
         if res ~= 0 then
             table.insert(h_gripper_respondable, h_gripper_all[k])

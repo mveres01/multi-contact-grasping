@@ -283,7 +283,7 @@ end
 -- MAIN FUNCTION
 threadCollectionFunction = function()
 
-    -- For for initialization from remoteApiCommandServer
+    -- For initialization from remoteApiCommandServer
     simWaitForSignal('h_object')
 
     local h_object = simGetIntegerSignal('h_object')
@@ -297,8 +297,6 @@ threadCollectionFunction = function()
     local h_gripper_contacts = simGetStringSignal('h_gripper_contacts')
     local h_gripper_respondable = simGetStringSignal('h_gripper_respondable')
     local max_vel_accel_jerk = simGetStringSignal('max_vel_accel_jerk')
-    local prop_invisible = simGetIntegerSignal('gripper_prop_invisible')
-    local prop_visible = simGetIntegerSignal('gripper_prop_visible')
 
     -- Tables of object handles need to be decoded
     h_gripper_all = simUnpackInt32Table(h_gripper_all)
@@ -316,11 +314,7 @@ threadCollectionFunction = function()
             simClearIntegerSignal('run_grasp_attempt')
             simSetScriptSimulationParameter(sim_handle_all, 'fingerAngle', finger_angle)
 
-            simSetModelProperty(h_gripper_base, prop_visible)
-            simResetDynamicObject(h_gripper_base)
-            simSwitchThread()
-
-            --- These will save the results of the grasp attemp; a successful
+            --- These will save the results of the grasp attempt; a successful
             -- or failed grasp will be encoded here; otherwise we return
             -- default values
             header = {-1}
@@ -424,7 +418,7 @@ threadCollectionFunction = function()
                 simClearIntegerSignal('grasp_done')
                 simSwitchThread()
 
-                if is_touching then
+                if is_contact then
                     simWait(3)
                 end
 
@@ -434,9 +428,6 @@ threadCollectionFunction = function()
             simSetObjectInt32Parameter(h_object, sim_shapeintparam_static, 1)
             simResetDynamicObject(h_object)
             simSwitchThread()
-
-            simSetModelProperty(h_gripper_base, prop_invisible)
-            simResetDynamicObject(h_gripper_base)
 
             simSetStringSignal('header', table.tostring(header))
             simSetStringSignal('pregrasp', simPackFloatTable(pregrasp))
