@@ -39,47 +39,47 @@ end
 
 function table.val_to_str ( v )
     ---From http://lua-users.org/wiki/TableUtils
-  if "string" == type( v ) then
-    v = string.gsub( v, "\n", "\\n" )
-    if string.match( string.gsub(v,"[^'\"]",""), '^"+$' ) then
-      return "'" .. v .. "'"
+    if "string" == type( v ) then
+        v = string.gsub( v, "\n", "\\n" )
+        if string.match( string.gsub(v,"[^'\"]",""), '^"+$' ) then
+            return "'" .. v .. "'"
+        end
+        return '"' .. string.gsub(v,'"', '\\"' ) .. '"'
+    else
+        return "table" == type( v ) and table.tostring( v ) or
+        tostring( v )
     end
-    return '"' .. string.gsub(v,'"', '\\"' ) .. '"'
-  else
-    return "table" == type( v ) and table.tostring( v ) or
-      tostring( v )
-  end
 end
 
 
 function table.key_to_str ( k )
     ---From http://lua-users.org/wiki/TableUtils
-  if "string" == type( k ) and string.match( k, "^[_%a][_%a%d]*$" ) then
-    return k
-  else
-    return "[" .. table.val_to_str( k ) .. "]"
-  end
+    if "string" == type( k ) and string.match( k, "^[_%a][_%a%d]*$" ) then
+        return k
+    else
+        return "[" .. table.val_to_str( k ) .. "]"
+    end
 end
 
 
 function table.tostring( tbl )
     ---From http://lua-users.org/wiki/TableUtils
-  local result, done = {}, {}
-  for k, v in ipairs( tbl ) do
-    table.insert( result, table.val_to_str( v ) )
-    done[ k ] = true
-  end
-  for k, v in pairs( tbl ) do
-    if not done[ k ] then
-      table.insert( result,
-        table.key_to_str( k ) .. "=" .. table.val_to_str( v ) )
+    local result, done = {}, {}
+    for k, v in ipairs( tbl ) do
+        table.insert( result, table.val_to_str( v ) )
+        done[ k ] = true
     end
-  end
-  return "{" .. table.concat( result, "," ) .. "}"
+    for k, v in pairs( tbl ) do
+        if not done[ k ] then
+            table.insert( result,
+            table.key_to_str( k ) .. "=" .. table.val_to_str( v ) )
+        end
+    end
+    return "{" .. table.concat( result, "," ) .. "}"
 end
 
 
----    Checks that the grasp is valid: the fingertips are contacting the object,
+--- Checks that the grasp is valid: the fingertips are contacting the object,
 -- and records the position, force, and normal if everything is good.
 function checkContacts(contactPoints, h_object)
 
@@ -139,7 +139,6 @@ function checkCollisions(h_object, h_table_object, h_gripper_respondable,
         end
 
     end
-
     --- If we got this far, the rest of the gripper shouldn't be contacting
     -- anything else, and we can deduce the grasp is successful
     return false
@@ -165,7 +164,6 @@ function countCollisions(h_object, h_table_object, h_gripper_respondable,
             return true
         end
     end
-
     --- If we got this far, the rest of the gripper shouldn't be contacting
     -- anything else, and we can deduce the grasp is successful
     return false
@@ -213,7 +211,7 @@ function getGraspInformation(all_in_contact, contactsInfo, object_tree,
     for _, component in pairs(object_tree) do
 
         local name = simGetObjectName(component)
-        if  string.find(name, 'joint') ~= nil then
+        if string.find(name, 'joint') ~= nil then
 
             local intrinsic_angle = simGetJointPosition(component)
             names = table.copy(names, {name, 1})
@@ -226,14 +224,13 @@ function getGraspInformation(all_in_contact, contactsInfo, object_tree,
     local frame_work2palm = simGetObjectMatrix(h_gripper_palm, h_workspace)
     local frame_work2palm_orient = simGetEulerAnglesFromMatrix(frame_work2palm)
     local frame_work2palm_pos = {frame_work2palm[4],
-                                    frame_work2palm[8],
-                                    frame_work2palm[12]}
+                                 frame_work2palm[8],
+                                 frame_work2palm[12]}
 
     local frame_world2work = simGetObjectMatrix(h_workspace, -1)
 
     -- Also save the mass, inertia, and center of mass of the object
     local mass, inertia, com = simGetShapeMassAndInertia(h_object)
-    local material_id  = simGetShapeMaterial(h_object)
     local finger_angle = simGetScriptSimulationParameter(sim_handle_all, 'fingerAngle')
 
     -- returned in absolute coordinate
@@ -251,7 +248,6 @@ function getGraspInformation(all_in_contact, contactsInfo, object_tree,
         {'inertia_wrt_world', #inertia},
         {'com_wrt_world', #com},
         {'finger_angle', #finger_angle},
-        {'material_id', 1},
         {'objectLinearVelocity', #lin_velocity},
         {'objectAngularVelocity', #ang_velocity}
         )
@@ -268,7 +264,6 @@ function getGraspInformation(all_in_contact, contactsInfo, object_tree,
         inertia,
         com,
         finger_angle,
-        {material_id},
         lin_velocity,
         ang_velocity
         )
@@ -298,24 +293,20 @@ threadCollectionFunction = function()
     local h_gripper_base = simGetIntegerSignal('h_gripper_base')
     local h_gripper_dummy = simGetIntegerSignal('h_gripper_dummy')
     local h_gripper_prox = simGetIntegerSignal('h_gripper_prox')
-
-    local prop_invisible = simGetIntegerSignal('gripper_prop_invisible')
-    local prop_visible = simGetIntegerSignal('gripper_prop_visible')
-
     local h_gripper_all = simGetStringSignal('h_gripper_all')
     local h_gripper_contacts = simGetStringSignal('h_gripper_contacts')
     local h_gripper_respondable = simGetStringSignal('h_gripper_respondable')
     local max_vel_accel_jerk = simGetStringSignal('max_vel_accel_jerk')
+    local prop_invisible = simGetIntegerSignal('gripper_prop_invisible')
+    local prop_visible = simGetIntegerSignal('gripper_prop_visible')
 
-
+    -- Tables of object handles need to be decoded
     h_gripper_all = simUnpackInt32Table(h_gripper_all)
     h_gripper_contacts = simUnpackInt32Table(h_gripper_contacts)
     h_gripper_respondable = simUnpackInt32Table(h_gripper_respondable)
     max_vel_accel_jerk = simUnpackFloatTable(max_vel_accel_jerk)
 
     local num_collision_thresh = simGetFloatSignal('num_collision_thresh')
-
-
 
     while simGetSimulationState() ~= sim_simulation_advancing_abouttostop do
 
@@ -329,7 +320,7 @@ threadCollectionFunction = function()
             simResetDynamicObject(h_gripper_base)
             simSwitchThread()
 
-            -- These will save the results of the grasp attemp; a successful
+            --- These will save the results of the grasp attemp; a successful
             -- or failed grasp will be encoded here; otherwise we return
             -- default values
             header = {-1}
@@ -346,7 +337,6 @@ threadCollectionFunction = function()
             if is_collision == false then
 
                 -- ---------------- GRASP THE OBJECT ---------------------
-
                 simSetIntegerSignal('closeGrasp', 1)
                 simWaitForSignal('grasp_done')
                 simClearIntegerSignal('grasp_done')
@@ -401,8 +391,6 @@ threadCollectionFunction = function()
                     end
                     simRMLRemove(rmlHandle)
                     simSwitchThread()
-
-
 
                     --- Three conditions for a successful grasp:
                     -- 1. Proximity sensor detects the object, and

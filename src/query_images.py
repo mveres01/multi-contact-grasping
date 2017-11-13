@@ -10,7 +10,6 @@ import subprocess
 import itertools
 import numpy as np
 import cPickle as pickle
-from utils import *
 
 import lib
 from lib.python_config import (config_simulation_path,
@@ -93,6 +92,9 @@ def load_subset(h5_file, object_keys, shuffle=True):
 def is_valid_image(mask, num_pixel_thresh=400):
 
     where_object = np.vstack(np.where(mask == 0)).T
+    if len(where_object) == 0:
+        return False
+
     min_row, min_col = np.min(where_object, axis=0)
     max_row, max_col = np.max(where_object, axis=0)
 
@@ -171,7 +173,6 @@ def get_minibatch(grasps, props, index, num_views):
                 raise Exception('No image returned.')
             if is_valid_image(image[0, 4], num_pixel_thresh=600):
 
-
                 # Query simulator for an image & return camera pose
                 sim.set_gripper_properties(visible=True, renderable=True, dynamic=False)
 
@@ -209,8 +210,6 @@ def get_minibatch(grasps, props, index, num_views):
             np.vstack(sim_grasps), np.vstack(sim_work2cam) )
 
 
-
-
 def create_dataset(inputs, input_props, num_views, dataset_name):
     """Collects images from sim & creates dataset for doing ML."""
 
@@ -224,7 +223,7 @@ def create_dataset(inputs, input_props, num_views, dataset_name):
     mx_shape = (inputs.shape[0] * num_views, 12)
 
     dset_im_reg = f.create_dataset('images', im_shape, dtype='float16')
-    dset_im_grasp = f.create_dataset('image_w_grasp', im_shape, dtype='float16')
+    dset_im_grasp = f.create_dataset('images_gripper', im_shape, dtype='float16')
     dset_gr = f.create_dataset('grasps', gr_shape)
 
     group = f.create_group('props')
@@ -281,7 +280,7 @@ def get_equalized_idx(name_array, max_samples=250, idx_mask=None):
         if idx_mask is not None:
             choices = [c for c in choices if c not in idx_mask]
 
-        if freq[object_] < max_samples:
+        if len(choices) < max_samples:
             choices = np.random.choice(choices, max_samples, True)
         else:
             choices = np.random.choice(choices, max_samples, False)
@@ -294,8 +293,8 @@ def get_equalized_idx(name_array, max_samples=250, idx_mask=None):
 if __name__ == '__main__':
 
     np.random.seed(1234)
-    batch_views = 5
-    max_samples = 150
+    batch_views = 10
+    max_samples = 50
     max_valid_samples = 10
     n_test_objects = 2
     shuffle_data = False
@@ -310,11 +309,12 @@ if __name__ == '__main__':
     train_grasps, train_props = load_subset(f, train_keys, shuffle_data)
 
     names = train_props['object_name']
+
     valid_idx = get_equalized_idx(names, max_samples=max_valid_samples)
     y_valid = train_grasps[valid_idx]
     props_valid = {p: train_props[p][valid_idx] for p in train_props}
 
-    create_dataset(y_valid, props_valid, batch_views, 'collectValid256.hdf5')
+    #create_dataset(y_valid, props_valid, batch_views, 'collectValid256.hdf5')
 
 
     train_idx = get_equalized_idx(names, max_samples=max_samples, idx_mask=valid_idx)
