@@ -203,13 +203,17 @@ end
 
 
 setJointPositionByName = function(inInts, inFloats, inStrings, inBuffer)
-
     local position = inFloats[1]
     local h_part = simGetObjectHandle(inStrings[1])
     simSetJointPosition(h_part, position)
     return {}, {}, {}, ''
 end
 
+getJointPositionByName = function(inInts, inFloats, inStrings, inBuffer)
+    local h_part = simGetObjectHandle(inStrings[1])
+    local pos = simGetJointPosition(h_part)
+    return {}, {pos}, {}, ''
+end
 
 setJointKinematicsMode = function(inInts, inFloats, inStrings, inBuffer)
 
@@ -229,26 +233,6 @@ setJointKinematicsMode = function(inInts, inFloats, inStrings, inBuffer)
     return {}, {}, {}, ''
 end
 
-
-setKinematicTargetPos = function(inInts, inFloats, inStrings, inBuffer)
-    --- Reads current pose of fingertips, and sets kinematic Targets to coincident.
-    -- The typical scheme for calling this is:
-    -- setGripperFingerTips
-    -- setKinematicTargetPos
-    -- setGripperInverseKinematics ...
-
-    local h_ik_contacts = simGetStringSignal('h_ik_contacts')
-    h_ik_contacts = simUnpackInt32Table(h_ik_contacts)
-
-    local h_ik_targets = simGetStringSignal('h_ik_targets')
-    h_ik_targets = simUnpackInt32Table(h_ik_targets)
-
-    local zeros = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-    for i = 1, # h_ik_targets, 1 do
-        simSetObjectMatrix(h_ik_targets[i], h_ik_contacts[i], zeros)
-    end
-    return {}, {}, {}, ''
-end
 
 setGripperProperties = function(inInts, inFloats, inStrings, inBuffer)
 

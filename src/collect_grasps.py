@@ -236,7 +236,8 @@ def collect_grasps(mesh_path, sim,
 
 if __name__ == '__main__':
 
-    meshes = glob.glob(os.path.join(config_mesh_dir, '*.stl'))
+    meshes = glob.glob(os.path.join(config_mesh_dir, '*'))
+    meshes = [m for m in meshes if any(x in m for x in ['.stl', '.obj'])]
     sim = SI.SimulatorInterface(port=19997)
     for m in meshes:
         mesh_path = os.path.join(config_mesh_dir, m)

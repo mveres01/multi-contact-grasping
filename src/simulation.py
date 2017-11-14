@@ -265,13 +265,13 @@ class SimulatorInterface(object):
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error loading object!')
 
-    def set_object_pose(self, frame_work2obj):
-        """Sets the pose for the current object to be WRT the workspace frame."""
-        return self.set_pose_by_name('object', frame_work2obj)
-
     def get_object_pose(self):
         """Queries the simulator for current object pose WRT the workspace."""
         return self.get_pose_by_name('object')
+
+    def set_object_pose(self, frame_work2obj):
+        """Sets the pose for the current object to be WRT the workspace frame."""
+        return self.set_pose_by_name('object', frame_work2obj)
 
     def set_gripper_pose(self, frame_work2palm, reset_config=True):
         """Sets the pose for the current object to be WRT the workspace frame.
@@ -289,19 +289,6 @@ class SimulatorInterface(object):
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting gripper pose!')
 
-    def set_pose_by_name(self, name, frame_work2pose):
-        """Given a name of an object in the scene, set pose WRT to workspace."""
-
-        frame = self._format_matrix(frame_work2pose)
-
-        empty_buff = bytearray()
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'setPoseByName', [],
-             frame, [name], empty_buff, vrep.simx_opmode_blocking)
-
-        if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting pose for name <%s>!'%name)
-
     def get_pose_by_name(self, name):
         """Queries the simulator for the pose of object corresponding to <name>.
 
@@ -317,8 +304,33 @@ class SimulatorInterface(object):
             raise Exception('Error getting pose for <%s>!'%name)
         return lib.utils.format_htmatrix(r[2])
 
-    def set_joint_position_by_name(self, name, position):
+    def set_pose_by_name(self, name, frame_work2pose):
         """Given a name of an object in the scene, set pose WRT to workspace."""
+
+        frame = self._format_matrix(frame_work2pose)
+
+        empty_buff = bytearray()
+        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
+             vrep.sim_scripttype_childscript, 'setPoseByName', [],
+             frame, [name], empty_buff, vrep.simx_opmode_blocking)
+
+        if r[0] != vrep.simx_return_ok:
+            raise Exception('Error setting pose for name <%s>!'%name)
+
+    def get_joint_position_by_name(self, name):
+        """Given a name of a joint, get the current position"""
+
+        empty_buff = bytearray()
+        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
+             vrep.sim_scripttype_childscript, 'getJointPositionByName', [],
+             [], [name], empty_buff, vrep.simx_opmode_blocking)
+
+        if r[0] != vrep.simx_return_ok:
+            raise Exception('Error setting joint position for <%s>!'%name)
+        return r[2][0]
+
+    def set_joint_position_by_name(self, name, position):
+        """Given a name of a joint, get the current position"""
 
         empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
@@ -327,6 +339,20 @@ class SimulatorInterface(object):
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting joint position for <%s>!'%name)
+
+    def set_gripper_kinematics_mode(self, mode='forward'):
+
+        joint_modes = ['forward', 'inverse']
+        if mode not in joint_modes:
+            raise Exception('Joint mode must be in %s'%joint_modes)
+
+        empty_buff = bytearray()
+        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
+             vrep.sim_scripttype_childscript, 'setJointKinematicsMode', [],
+             [], [mode], empty_buff, vrep.simx_opmode_blocking)
+
+        if r[0] != vrep.simx_return_ok:
+            raise Exception('Error setting gripper kinematics mode.')
 
     def set_gripper_properties(self, collidable=False, measureable=False,
                                renderable=False, detectable=False,
@@ -352,31 +378,6 @@ class SimulatorInterface(object):
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting gripper properties.')
-
-    def set_gripper_kinematics_mode(self, mode='forward'):
-
-        joint_modes = ['forward', 'inverse']
-        if mode not in joint_modes:
-            raise Exception('Joint mode must be in %s'%joint_modes)
-
-        empty_buff = bytearray()
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'setJointKinematicsMode', [],
-             [], [mode], empty_buff, vrep.simx_opmode_blocking)
-
-        if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting gripper kinematics mode.')
-
-    def set_gripper_kinematics_target(self):
-        """Always set the targets to be current position of fingertips."""
-
-        empty_buff = bytearray()
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'setKinematicTargetPos', [],
-             [], [], empty_buff, vrep.simx_opmode_blocking)
-
-        if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting gripper kinematics targets.')
 
     def query(self, frame_work2cam, frame_world2work=None,
               resolution=128, rgb_near_clip=0.2, rgb_far_clip=10.0,
@@ -515,34 +516,6 @@ class SimulatorInterface(object):
         postgrasp = decode_grasp(header, vrep.simxUnpackFloats(postgrasp))
         return pregrasp, postgrasp
 
-    def view_grasp(self, frame_world2work, frame_work2cam, grasp_wrt_cam,
-                   reset_container=0):
-        """Plots the contact positions and normals of a grasp WRT camera frame.
-
-        This function first converts the grasp from the camera frame to workspace
-        frame, then plots the contact positions and normals. This function
-        signature is like this to quickly accomodate grasp predictions made
-        by machine learning / neural nets predicting WRT a visual image.
-        """
-
-        frame_world2work = self._format_matrix(frame_world2work)
-        frame_work2cam = self._format_matrix(frame_work2cam)
-
-        # Prepare the inputs; we give it both a camera and object pose
-        in_floats = frame_world2work[:]
-        in_floats.extend(frame_work2cam)
-        in_floats.extend(grasp_wrt_cam)
-
-        in_ints = [reset_container]
-
-        # Make a call to the simulator
-        empty_buff = bytearray()
-        r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'displayGrasp', in_ints,
-             in_floats, [], empty_buff, vrep.simx_opmode_blocking)
-        if r[0] != vrep.simx_return_ok:
-            raise Exception('Error when trying to display grasps in simulator.')
-
     def stop(self):
         vrep.simxStopSimulation(self.clientID, vrep.simx_opmode_blocking)
 
@@ -552,91 +525,3 @@ class SimulatorInterface(object):
     def is_running(self):
         """Checks if simulator is connectedd by querying for connection ID."""
         return vrep.simxGetConnectionId(self.clientID) != -1
-
-
-
-if __name__ == '__main__':
-
-    def find_name(to_find):
-        from lib.python_config import config_mesh_dir
-
-        meshes = os.listdir(config_mesh_dir)
-        for mesh_name in meshes:
-            if str(to_find) in mesh_name:
-                return mesh_name.split('.')[0]
-        return None
-
-    import h5py
-    from lib.python_config import config_mesh_dir
-
-    GLOBAL_DATAFILE = '/scratch/mveres/grasping-cvae-multi/valid256.hdf5'
-
-    sim = SimulatorInterface(port=19000)
-
-
-    # Load the data. Note that Grasps are encoded WRT workspace frame
-    dataset = h5py.File(GLOBAL_DATAFILE, 'r')
-    grasps = dataset['grasps']
-    props = dataset['props']
-
-    for i in xrange(len(grasps)):
-
-        com = props['work2com'][i]
-        mass = props['work2mass'][i]
-        inertia = props['work2inertia'][i]
-
-        object_name = find_name(props['object_name'][i, 0]) + '.stl'
-        object_path = os.path.join(config_mesh_dir, object_name)
-
-        sim.load_object(object_path, com, mass, inertia * 10)
-
-        sim.set_object_pose(props['frame_work2obj'][i])
-
-
-        # Randomize the camera pose by sampling an offset, local, and global rot
-        base_offset = -0.4
-        offset_mag = 0.15
-        local_rot = (10, 10, 10)
-        global_rot = (30, 30, 30)
-
-        frame_work2cam = lib.utils.format_htmatrix(props['frame_work2palm'][i])
-
-        frame_work2cam = lib.utils.randomize_pose(frame_work2cam, base_offset,
-                                                  offset_mag, None, None)
-
-        images, frame_work2cam_ht = sim.query(frame_work2cam,
-                                              props['frame_world2work'][i],
-                                              camera_fov=60*np.pi/180.)
-
-        if frame_work2cam_ht is not None:
-            frame_cam2work_ht = lib.utils.invert_htmatrix(frame_work2cam_ht)
-            grasp = lib.utils.convert_grasp_frame(frame_cam2work_ht, grasps[i])
-
-        print 'Running?: ', sim.is_running()
-
-
-        '''
-        sim.view_grasp(props['frame_world2work'][i],
-                       props['frame_work2cam'][i],
-                       grasps[i], reset_container=1)
-        '''
-
-        sim.set_gripper_pose(props['frame_work2palm'][i])
-
-        pregrasp, postgrasp = sim.run_threaded_candidate()
-        if pregrasp is None or postgrasp is None:
-            continue
-
-        grasp = np.hstack([pregrasp['work2contact0'],
-                           pregrasp['work2contact1'],
-                           pregrasp['work2contact2'],
-                           pregrasp['work2normal0'],
-                           pregrasp['work2normal1'],
-                           pregrasp['work2normal2']])
-        grasp = lib.utils.convert_grasp_frame(frame_cam2work_ht, grasp)
-
-
-        sim.view_grasp(props['frame_world2work'][i],
-                       props['frame_work2cam'][i],
-                       grasps[i], reset_container=1)
-        sim.set_object_pose(props['frame_work2obj'][i])
