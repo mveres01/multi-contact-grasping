@@ -1,6 +1,20 @@
 # multi-contact-grasping
 
-This project implements a simulated grasp-and-lift process in V-REP using the Barrett Hand, and interfaces through a python remote API. The primary goal of this project is to collect information on where individual contacts of a multi-fingered hand can be placed on an object, that will lead to a successful grasps. The emphasis on constraining the grasp to specific contacts is to promote future work in fine manipulation.
+This project implements a simulated grasp-and-lift process in V-REP using the Barrett Hand, with an interface through a python remote API.
+
+# Overview
+
+The primary goal of this project is to collect information on where individual contacts of a multi-fingered hand can be placed on an object, that will lead to successful grasps. The emphasis on constraining the grasp to specific contacts is to promote future work in learning fine manipulation skills.
+
+This project is an extension of [this repo](https://github.com/mveres01/grasping), largely focusing on simplifying the pipeline, integration through a python remote API, and image-domain randomization.
+
+## Recorded Information
+
+TODO
+
+## Image Domain Randomization
+
+TO FINISH
 
 Randomization of images is done with respect to the following scene elements:
 
@@ -10,7 +24,6 @@ Randomization of images is done with respect to the following scene elements:
 * Colour & texture of table object
 * Camera pose
 
-## Sample Images
 <p align="center">
   <img src="./docs/0_0_box_poisson_016.png" width="256"/>
   <img src="./docs/0_1_box_poisson_016.png" width="256"/>
@@ -19,9 +32,6 @@ Randomization of images is done with respect to the following scene elements:
   <img src="./docs/0_4_box_poisson_016.png" width="256"/>
 </p>
 
-## Notes
-
-This project is an extension of [this repo](https://github.com/mveres01/grasping), largely focusing on improvements to the pipeline, integration through a python remote API, and image-domain randomization.
 
 # Requirements:
 
@@ -32,11 +42,13 @@ This project is an extension of [this repo](https://github.com/mveres01/grasping
 
 ## Initialization
 
+TODO: Add requirements.txt
+
 ```
 pip install -r requirements.txt
 ```
 
-* Copy vrep.py and vrepConst.py from 
+* Copy __vrep.py__ and __vrepConst.py__ from 
 _path/to/vrep/V-REP_PRO_EDU/programming/remoteApiBindings/python/python/_ to _./lib_. You will also need to copy the following library (use the 32/64-bit version depending on what version of V-REP you've downloaded):
   * __windows__: path/to/vrep/V-REP_PRO_EDU/programming/remoteApiBindings/lib/lib/64Bit/remoteApi.dll
   * __linux__: path/to/vrep/V-REP_PRO_EDU/programming/remoteApiBindings/lib/lib/64Bit/remoteApi.so
