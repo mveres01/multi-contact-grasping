@@ -13,7 +13,8 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 import lib
 import lib.utils
-from lib.python_config import (config_mesh_dir, config_collected_data_dir)
+from lib.python_config import (config_mesh_dir,
+                               config_output_collected_dir)
 
 import simulation as SI
 
@@ -125,19 +126,22 @@ def generate_candidates(mesh, num_samples=1000, noise_level=0.05,
     return matrices
 
 
-def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
-                   num_candidates=1000, candidate_noise_level=0.05,
+def collect_grasps(mesh_path, sim,
+                   initial_height=0.5,
+                   num_candidates=100,
+                   candidate_noise_level=0.05,
                    num_random_per_candidate=5,
-                   candidate_offset=-0.07):
+                   candidate_offset=-0.07,
+                   candidate_offset_mag=0.03,
+                   candidate_local_rot=(10, 10, 359)):
 
-    # Get the paths & structures set up for saving results
-    if not os.path.exists(config_collected_data_dir):
-        os.makedirs(config_collected_data_dir)
+    if not os.path.exists(config_output_collected_dir):
+        os.makedirs(config_output_collected_dir)
 
     mesh_name = mesh_path.split(os.path.sep)[-1]
 
     output_file = mesh_name.split('.')[0] + '.hdf5'
-    save_path = os.path.join(config_collected_data_dir, output_file)
+    save_path = os.path.join(config_output_collected_dir, output_file)
 
     datafile = h5py.File(save_path, 'w')
     pregrasp_group = datafile.create_group('pregrasp')
@@ -152,12 +156,12 @@ def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
                                      gripper_offset=candidate_offset)
 
 
-
     # Compute an initial object resting pose by dropping the object from a
     # given position / height above the workspace table
+    mass = mesh.mass_properties['mass'] * 10
     com = mesh.mass_properties['center_mass']
-    inertia = mesh.mass_properties['inertia'].flatten()
-    sim.load_object(mesh_path, com, mass, inertia*5)
+    inertia = mesh.mass_properties['inertia'] * 5
+    sim.load_object(mesh_path, com, mass, inertia.flatten())
 
     initial_pose = sim.get_object_pose()
     initial_pose[:3, 3] = [0, 0, initial_height]
@@ -169,7 +173,6 @@ def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
     # doesn't have to be done, but it avoids instances where the object may
     # subsequently have fallen off the table
     object_pose = sim.get_object_pose()
-
 
     num_successful_grasps = 0
     for count, row in enumerate(candidates):
@@ -188,8 +191,8 @@ def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
             # Here we let the pose vary +- 3cm along local z, and a random
             # rotation between [0, 360) degress around local z
             random_pose = lib.utils.randomize_pose(work2candidate,
-                                                   offset_mag=0.03,
-                                                   local_rot=(10, 10, 359))
+                                                   offset_mag=candidate_offset_mag,
+                                                   local_rot=candidate_local_rot)
             sim.set_gripper_pose(random_pose)
 
             # Try to grasp and lift the object. If the gripper during pre-grasp
@@ -206,6 +209,7 @@ def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
 
             if success is False: # Only save successful grasps
                 continue
+
 
             # Create initial structures if dataset is currently empty, then
             # save grasp attempt
@@ -232,34 +236,9 @@ def collect_grasps(mesh_path, sim, mass=1, initial_height=0.5,
 
 if __name__ == '__main__':
 
-    from subprocess import check_output
-    import signal
-    import time
-
-    if len(sys.argv) > 1:
-
-        port = None
-        port_list = range(20000, 25000)
-        np.random.shuffle(port_list)
-        for p in port_list:
-            if not SI.is_listening(port=p):
-                port = p
-                break
-
-        sim = SI.SimulatorInterface(port=port)
-        time.sleep(0.1)
-
-        collect_grasps(os.path.join(config_mesh_dir, sys.argv[1]), sim)
-        sim.stop()
-
-        # Kill the screen & vrep session
-        process = check_output("screen -ls | awk '/\.port%d\t/ {print strtonum($1)}'"%p, shell=True)
-        process = int(process)
-        os.kill(process, signal.SIGTERM)
-    else:
-        meshes = glob.glob(os.path.join(config_mesh_dir, '*.stl'))
-        sim = SI.SimulatorInterface(port=19997)
-        for m in meshes:
-            mesh_path = os.path.join(config_mesh_dir, m)
-            print 'mesh_path: ', mesh_path
-            collect_grasps(mesh_path, sim)
+    meshes = glob.glob(os.path.join(config_mesh_dir, '*.stl'))
+    sim = SI.SimulatorInterface(port=19997)
+    for m in meshes:
+        mesh_path = os.path.join(config_mesh_dir, m)
+        print 'mesh_path: ', mesh_path
+        collect_grasps(mesh_path, sim)

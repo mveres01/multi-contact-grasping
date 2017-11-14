@@ -12,9 +12,8 @@ from lib.utils import (format_htmatrix, invert_htmatrix,
                         get_unique_idx, convert_grasp_frame)
 
 # Save/data directories
-from lib.python_config import (config_collected_data_dir,
-                               config_processed_data_dir,
-                               config_dataset_path)
+from lib.python_config import (config_output_collected_dir,
+                               config_output_dataset_path)
 
 def get_outlier_mask(data_in, sigma=3):
     """Find dataset outliers by whether or not it falls within a given number
@@ -90,7 +89,7 @@ def postprocess(h5_pregrasp, h5_postgrasp):
     return pregrasp, postgrasp
 
 
-def merge_datasets(data_dir, save_path=config_dataset_path):
+def merge_datasets(data_dir, save_path=config_output_dataset_path):
     """Given a directory, load a set of hdf5 files given as a list."""
 
     # We'll append all data into a list before shuffle train/test/valid
@@ -154,4 +153,4 @@ def merge_datasets(data_dir, save_path=config_dataset_path):
 
 
 if __name__ == '__main__':
-    merge_datasets(config_collected_data_dir, config_dataset_path)
+    merge_datasets(config_output_collected_dir, config_output_dataset_path)

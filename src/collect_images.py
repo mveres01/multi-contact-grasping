@@ -4,16 +4,11 @@ sys.path.append('..')
 import glob
 import time
 import h5py
-import signal
-import itertools
-import subprocess
-import itertools
 import numpy as np
 import cPickle as pickle
-
 import lib
-from lib.python_config import (config_simulation_path,
-                               config_dataset_path,
+from lib.python_config import (config_output_dir,
+                               config_output_dataset_path,
                                config_mesh_dir,
                                project_dir)
 from lib import vrep
@@ -87,7 +82,23 @@ def load_subset(h5_file, object_keys, shuffle=True):
     return grasps, props
 
 
+def plot_queried_images(image1, image2, postfix_name):
+    """Plots an image of [object, grasp on object] pairs."""
+
+    from scipy import misc
+    _, channels, num_rows, num_cols = image1.shape
+    fig = np.zeros((num_rows, num_cols*2, 3))
+    fig[:, :num_cols] = image1[0, :3].transpose(1, 2, 0)
+    fig[:, num_cols:] = image2[0, :3].transpose(1, 2, 0)
+
+    save_dir = os.path.join(config_output_dir, 'grasp_images')
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    misc.imsave(os.path.join(save_dir, postfix_name), fig)
+
+
 def is_valid_image(mask, num_pixel_thresh=400):
+    """Checks that image is a decent size and object is within bounds of image."""
 
     where_object = np.vstack(np.where(mask == 0)).T
     if len(where_object) == 0:
@@ -105,15 +116,15 @@ def is_valid_image(mask, num_pixel_thresh=400):
     return len(where_object) >= num_pixel_thresh
 
 
-def get_minibatch(grasps, props, index, num_views):
+def get_minibatch(grasps, props, index, num_views, save_queried_images=True):
     """Performs multithreading to query V-REP simulations for image + grasps."""
 
+    # Used to take a duplicate image of the current scene
     q_non_random = query_params.copy()
-    for key in q_non_random:
-        if 'randomize' in key:
-            q_non_random[key] = False
+    q_non_random['randomize_lighting'] = False
+    q_non_random['randomize_texture'] = False
+    q_non_random['randomize_colour'] = False
     q_non_random['reorient_up'] = False
-
 
     sim_images_reg, sim_images_grasp, sim_grasps, sim_work2cam = [], [], [], []
 
@@ -124,14 +135,14 @@ def get_minibatch(grasps, props, index, num_views):
 
     # These properties don't matter too much since we're not going to be
     # dynamically simulating the object
+    mass = props['mass_wrt_world'][index]
+    com = props['com_wrt_world'][index]
+    inertia = props['inertia_wrt_world'][index]
+
     frame_world2work = props['frame_world2work'][index]
     frame_work2obj = props['frame_work2obj'][index]
     frame_work2palm = props['frame_work2palm'][index]
     frame_work2palm = lib.utils.format_htmatrix(frame_work2palm)
-
-    mass = props['mass_workspace_wrt_world'][index]
-    com = props['com_workspace_wrt_world'][index]
-    inertia = props['inertia_workspace_wrt_world'][index]
 
     sim.load_object(object_path, com, mass, inertia)
 
@@ -144,68 +155,59 @@ def get_minibatch(grasps, props, index, num_views):
         if 'joint' not in key:
             continue
         pos = float(props[key][index, 0])
-        name = str(key.split('_pos')[0])
-        sim.set_joint_position_by_name(name, pos)
-    sim.set_gripper_properties(visible=False, renderable=False, dynamic=False)
+        sim.set_joint_position_by_name(str(key), pos)
 
     # For each successful grasp, we'll do a few randomizations of camera / obj
     for count in xrange(num_views):
 
+        # Toggle the gripper to be visible / invisible to the camera to get
+        # an image of the object with & without pregrasp pose
         sim.set_gripper_properties(visible=False, renderable=False, dynamic=False)
 
         while True:
 
             # We'll use the pose of where the grasp succeeded from as an
             # initial seedpoint for collecting images. For each image, we
-            # slightly randomize the cameras pose.
+            # slightly randomize the cameras pose, but make sure the camera is
+            # always above the tabletop
             frame_work2cam = lib.utils.randomize_pose(frame_work2palm, **pose_params)
 
             if frame_work2cam[11] <= 0.2:
                 continue
 
-            # Query simulator for an image & return camera pose
-            image, frame_work2cam_ht = \
+            # Take an image of the object
+            image1, frame_work2cam_ht = \
                 sim.query(frame_work2cam, frame_world2work, **query_params)
 
-            if image is None:
+            if image1 is None:
                 raise Exception('No image returned.')
-            if is_valid_image(image[0, 4], num_pixel_thresh=600):
+            elif not is_valid_image(image1[0, 4], num_pixel_thresh=600):
+                continue
 
-                # Query simulator for an image & return camera pose
-                sim.set_gripper_properties(visible=True, renderable=True, dynamic=False)
+            # Take an image of the grasp that was used on the object
+            sim.set_gripper_properties(visible=True, renderable=True, dynamic=False)
 
-                image2, _ = sim.query(frame_work2cam_ht[:3].flatten(),
-                                      props['frame_world2work'][index],
-                                      **q_non_random)
+            image2, _ = \
+                sim.query(frame_work2cam_ht[:3].flatten(), frame_world2work , **q_non_random)
 
-
-                from scipy import misc
-                _, channels, num_rows, num_cols = image.shape
-                fig = np.zeros((num_rows, num_cols*2, 3))
-                fig[:, :num_cols] = image[0, :3].transpose(1, 2, 0)
-                fig[:, num_cols:] = image2[0, :3].transpose(1, 2, 0)
-
-                save_path = 'grasp_images'
-                if not os.path.exists(save_path):
-                    os.makedirs(save_path)
+            if save_queried_images:
                 name = str(props['object_name'][index, 0])
                 name = '%d_%d_%s.png'%(index, count, name)
-                save_path = os.path.join(save_path, name)
-                misc.imsave(save_path, fig)
+                plot_queried_images(image1, image2, name)
 
-                break
+            break
 
         frame_cam2work_ht = lib.utils.invert_htmatrix(frame_work2cam_ht)
         grasp = lib.utils.convert_grasp_frame(frame_cam2work_ht, grasps[index])
         time.sleep(0.1)
 
         sim_grasps.append(np.float32(grasp))
-        sim_images_reg.append(np.float16(image))
+        sim_images_reg.append(np.float16(image1))
         sim_images_grasp.append(np.float16(image2))
         sim_work2cam.append(np.float32(frame_work2cam_ht[:3].flatten()))
 
     return (np.vstack(sim_images_reg), np.vstack(sim_images_grasp),
-            np.vstack(sim_grasps), np.vstack(sim_work2cam) )
+            np.vstack(sim_grasps), np.vstack(sim_work2cam))
 
 
 def create_dataset(inputs, input_props, num_views, dataset_name):
@@ -297,7 +299,7 @@ if __name__ == '__main__':
     n_test_objects = 2
     shuffle_data = False
 
-    f = h5py.File(config_dataset_path, 'r')
+    f = h5py.File(config_output_dataset_path, 'r')
 
     grasps, props = load_subset(f, f.keys(), shuffle_data)
     create_dataset(grasps, props, batch_views, 'dataset.hdf5')

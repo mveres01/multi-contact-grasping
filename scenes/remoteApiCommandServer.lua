@@ -292,6 +292,8 @@ loadObject = function(inInts, inFloats, inStrings, inBuffer)
 
     local file_format = inInts[1]
 
+    local use_convex_as_respondable = inInts[2]
+
     local mesh_path = inStrings[1]
 
     local com = {inFloats[1], inFloats[2], inFloats[3]}
@@ -310,7 +312,11 @@ loadObject = function(inInts, inFloats, inStrings, inBuffer)
 
         -- If we already have a mesh object in the scene, remove it
         if h_object ~= nil then
-            simRemoveObject(h_object)
+            local all = simGetObjectsInTree(h_object)
+            for i = 1, #all, 1 do
+                print('removing: ', simGetObjectName(all[i]))
+                simRemoveObject(all[i])
+            end
             simClearIntegerSignal('h_object')
         end
 
@@ -323,17 +329,33 @@ loadObject = function(inInts, inFloats, inStrings, inBuffer)
             print('ERROR: UNABLE TO CREATE MESH SHAPE')
             simStopSimulation()
         end
+
+
+        -- Sometimes, meshes may be complex and dynamics are tricky to emulate.
+        -- Here, we can calculate a convex hull for the object, and perform all
+        -- grasps relative to that instead.
+        if use_convex_as_respondable == 1 then
+            local vert, idx = simGetQHull(vertices[1])
+            local h_object_2 = simCreateMeshShape(0, 0, vert, idx)
+
+            simSetObjectMatrix(h_object, h_object_2, {0,0,0,0,0,0,0,0,0,0,0,0})
+            simSetObjectInt32Parameter(h_object_2, sim_objintparam_visibility_layer, 0)
+            simSetObjectParent(h_object, h_object_2, true)
+            simSetModelProperty(h_object, sim_modelproperty_not_collidable +
+                                          sim_modelproperty_not_measurable +
+                                          sim_modelproperty_not_dynamic +
+                                          sim_modelproperty_not_respondable,
+                                          sim_modelproperty_not_detectable)
+            simSetObjectSpecialProperty(h_object, sim_objectspecialproperty_renderable)
+            h_object = h_object_2
+        end
+
         simSetIntegerSignal('h_object', h_object)
 
         simSetObjectName(h_object, 'object')
         simSetObjectInt32Parameter(h_object, sim_shapeintparam_respondable, 1)
         simReorientShapeBoundingBox(h_object, -1)
         simSetShapeMaterial(h_object, simGetMaterialId('usr_sticky'))
-
-        -- Set the object to be renderable & detectable by all sensors
-        simSetObjectSpecialProperty(h_object,
-            sim_objectspecialproperty_renderable +
-            sim_objectspecialproperty_detectable_all)
 
         --- By default, the absolute reference frame is used. We re-orient the
         -- object to be WRT this frame by default, so don't need an extra mtx.

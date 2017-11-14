@@ -227,12 +227,20 @@ class SimulatorInterface(object):
 
         return matrix_ht[:3].flatten().tolist()
 
-    def load_object(self, object_path, com, mass, inertia):
+    def load_object(self, object_path, com, mass, inertia, use_convex_as_respondable=False):
         """Loads an object into the simulator given it's full path.
 
         This function also sets the initial center of mass, mass, and
         inertia of the object.
         see: http://www.coppeliarobotics.com/helpFiles/en/regularApi/simImportMesh.htm
+
+        In some cases, meshes that get loaded in to the simulator may be very
+        complex, which is difficult for the dynamics engines to simulate
+        properly. The flag use_convex_as_respondable indicates whether to
+        perform all dynamics & collisions calculations relative to the convex
+        hull over the object. This will improve stability, but depending on the
+        shape of the object may make grasps look funny (e.g. not touching the
+        visible mesh). Use with care.
         """
 
         if '.obj' in object_path:
@@ -242,6 +250,8 @@ class SimulatorInterface(object):
         else:
             raise Exception('File format must be in {.obj, .stl}')
 
+        in_ints = [file_format, use_convex_as_respondable]
+
         in_floats = []
         in_floats.extend(com)
         in_floats.extend([mass])
@@ -249,7 +259,7 @@ class SimulatorInterface(object):
 
         empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'loadObject', [file_format],
+             vrep.sim_scripttype_childscript, 'loadObject', in_ints,
              in_floats, [object_path], empty_buff, vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:

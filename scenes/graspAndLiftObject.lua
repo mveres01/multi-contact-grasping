@@ -398,7 +398,7 @@ threadCollectionFunction = function()
 
                     local is_collision = countCollisions(
                         h_object, h_table_object, h_gripper_respondable,
-                        h_gripper_contacts, 50)
+                        h_gripper_contacts, 65)
 
                     local r2 = simCheckCollision(h_object, h_table_object)
                     success = (is_prox == 1) and (not is_collision) and (r2 == 0)
