@@ -1,17 +1,19 @@
 # grasping-random-pose
 
-This project implements a grasp-and-lift process in V-REP using the Barrett Hand, and interfaces through a python remote API. The primary goal of this project is to run simulated grasping experiments on how a multi-fingered hand can grasp an object.
+This project implements a simulated grasp-and-lift process in V-REP using the Barrett Hand, and interfaces through a python remote API. The primary goal of this project is to collect information on where individual contacts of a multi-fingered hand can be placed on an object, that will lead to a successful grasps. The emphasis on constraining the grasp to specific contacts is to promote future work in fine manipulation.
 
 # Requirements:
 
 * Python 2.7
 * V-REP from http://www.coppeliarobotics.com/downloads.html
-* Python trimesh library from https://pypi.python.org/pypi/trimesh
 * Mesh files in either .obj or .stl format. Sample images below come from objects downloaded from http://grasp-database.dkappler.de/. You will need to sign up in order to download them.
 * (optional) an Xserver (such as Xorg) if running V-REP in headless mode. Headless mode is when the simulator runs without any GUI present, and is useful when you don't need any immediate visual info about the scene.
-* (optional) GNU Parallel & linux for parallelization
 
 ## Initialization
+
+```
+pip install -r requirements.txt
+```
 
 * Assuming your installation directory for V-REP was C:\Program Files\V-REP3, copy vrep.py and vrepConst.py from 
 C:\Program Files\V-REP3\V-REP_PRO_EDU\programming\remoteApiBindings\python\python\ to ./lib. Additionally, you will need to copy the following file (use the 32/64-bit versions according to the version of V-REP you've downloaded):
