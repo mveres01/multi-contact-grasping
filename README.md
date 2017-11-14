@@ -2,12 +2,29 @@
 
 This project implements a simulated grasp-and-lift process in V-REP using the Barrett Hand, and interfaces through a python remote API. The primary goal of this project is to collect information on where individual contacts of a multi-fingered hand can be placed on an object, that will lead to a successful grasps. The emphasis on constraining the grasp to specific contacts is to promote future work in fine manipulation.
 
+Randomization of images is done with respect to the following scene elements:
+
+* Number of lights
+* Position of lights
+* Colour & texture of object
+* Colour & texture of table object
+* Camera pose
+
+## Sample Images
+<p align="center">
+  <img src="./docs/0_0_box_poisson_016.png" width="256"/>
+  <img src="./docs/0_1_box_poisson_016.png" width="256"/>
+  <img src="./docs/0_2_box_poisson_016.png" width="256"/>
+  <img src="./docs/0_3_box_poisson_016.png" width="256"/>
+  <img src="./docs/0_4_box_poisson_016.png" width="256"/>
+</p>
+
 # Requirements:
 
 * Python 2.7
-* V-REP from http://www.coppeliarobotics.com/downloads.html
-* Mesh files in either .obj or .stl format. Sample images below come from objects downloaded from http://grasp-database.dkappler.de/. You will need to sign up in order to download them.
-* (optional) an Xserver (such as Xorg) if running V-REP in headless mode. Headless mode is when the simulator runs without any GUI present, and is useful when you don't need any immediate visual info about the scene.
+* V-REP (http://www.coppeliarobotics.com/downloads.html)
+* Mesh files in either .obj or .stl format. Note that meshes with complicated structures will have a negative impact on the dynamics simulation, so pure / convex meshes are preferred.
+* (optional) an Xserver if running V-REP in headless mode (i.e. no GUI). 
 
 ## Initialization
 
@@ -15,52 +32,49 @@ This project implements a simulated grasp-and-lift process in V-REP using the Ba
 pip install -r requirements.txt
 ```
 
-* Assuming your installation directory for V-REP was C:\Program Files\V-REP3, copy vrep.py and vrepConst.py from 
-C:\Program Files\V-REP3\V-REP_PRO_EDU\programming\remoteApiBindings\python\python\ to ./lib. Additionally, you will need to copy the following file (use the 32/64-bit versions according to the version of V-REP you've downloaded):
+* Copy vrep.py and vrepConst.py from 
+_path/to/vrep/V-REP_PRO_EDU/programming/remoteApiBindings/python/python/_ to _./lib_. You will also need to copy the following library (use the 32/64-bit version depending on what version of V-REP you've downloaded):
   * __windows__: path/to/vrep/V-REP_PRO_EDU/programming/remoteApiBindings/lib/lib/64Bit/remoteApi.dll
   * __linux__: path/to/vrep/V-REP_PRO_EDU/programming/remoteApiBindings/lib/lib/64Bit/remoteApi.so
 
-* Download and place meshes into the ./data/processed_meshes folder. 
-
-# Collect Grasp Candidates
-A pipeline for pre-processing data and up-to and including collecting data has been saved in the ./src director. Assuming everything is set up properly, collecting data should be as simple as running each file sequentially. These steps are described below:
-
-```cd src```
+* Download and place meshes into the ./data/meshes folder. A sample mesh (cube.stl) has been provided.
 
 # Collect Grasping Experience
-To get a sense of what the simulation is doing, open the scene in V-REP (./scenes/grasp_scene.ttt). You should see a table, a few walls, and a Barrett Hand. 
+Open _./scenes/grasp_scene.ttt_ in V-REP. You should see a table, a few walls, and a Barrett Hand. 
 
-Start the scene by clicking the play (triangle) button at the top of the screen. The simulation is now waiting for commands from the main python scripts. Run the main collection script in ./src/collect_grasp.py:
+Start the scene by clicking the play (triangle) button at the top of the screen. Run the main collection script in ./src/collect_grasp.py:
 
 ```
+cd src
 python collect_grasps.py
 ```
 
-This will look in the folder ./data/processed_meshes, and run the first mesh it finds. You should see a mesh being imported into the scene, falling onto the table, then after a short delay a gripper should attempt grasps. When the gripper closes, it will check whether all the fingertips of the Barrett Hand are in contact with the object - if so, it will attempt to lift the object to a position above the table / workspace. Successful grasps (where the object remains in the grippers palm) are recorded and saved in a dataset for that specific object in the ./output/collected folder, in the .hdf5 format.
+This will look in the folder _./data/meshes_, and run the first mesh it finds. You should see a mesh being imported into the scene, falling onto the table, then after a short delay a gripper should begin to attempt grasping it. When the gripper closes, it will check whether all the fingertips of the Barrett Hand are in contact with the object - if so, it will attempt to lift the object to a position above the table. Successful grasps (where the object remains in the grippers palm) are recorded and saved in an hdf5 dataset for that specific object in the _./output/collected_ folder.
 
-Once grasping experiments have concluded for the object (or all objects if you're running many experiments), run ./src/postprocess_grasps to merge all data into a single file, remove potential duplicates from the dataset, and remove any extreme outliers. Feel free to modify this file to suit your needs.
+The pose of the object is kept fixed on each grasp attempt. 
+
+Once grasping experiments have concluded for the object (or all objects if you're running many experiments), run 
+
+```
+python postprocess_grasps.py
+```
+to merge all data into a single file, remove potential duplicates from the dataset, and remove any extreme outliers. Feel free to modify this file to suit your needs. Data will be saved to _./output/grasping.hdf5_. 
+
+## A Few things to Note:
+1. __The object is static during the pregrasp, and dynamically simulated during the lift__: This avoids potentially moving the object before the fingers come into contact with it.
+2. __The same object pose is used for each grasp attempt__: This avoids instances where an object may accidentally fall off the table, but can be removed as a constraint from the main script.
+3. __A grasp is successful if the object is in the grippers palm at the height of the lift__: A proximity sensor attached to the palm is used to record whether it detects an object in a nearby vicinity. A threshold is also specified on the number of contacts between the gripper and the object, which helps limit inconsistencies in the simulation dynamics.
+4. __Images are captured from a seperate script after simulations have finished__: To avoid introducing additional complexities into the collection script, images are collected after the main grasp collection has finished. This script will ultimately restore the state of the object and gripper during the grasp, and will position a camera randomly to collect images.
 
 # Supplementing the Dataset with Images
 
-Now that we have a dataset of grasps that were successful, we can supplement the data by returning to the simulator and collecting images from the camera. Running:
+Once data collection has finished, we can supplement the dataset by running:
 
 ```
+cd src
 python collect_images.py
 ```
 
-will open up / connect to a running V-REP scene, and begin collecting images using data from ./output/processed/grasping.hdf5. This script uses the state of the simulator at the time of the grasp (i.e. the object pose, gripper pose, angles, etc ...) and restores those parameters before taking an image. The query function is fairly flexible in the arguments it supports, and includes properties for performing scene randomization through:
+which will open up or connect to a running V-REP scene, and begin collecting images using data from _./output/processed/grasping.hdf5_. This script uses the state of the simulator at the time of the grasp (i.e. the object pose, gripper pose, angles, etc ...) and restores those parameters before taking an image. 
 
-* Randomizing the number of lights
-* Randomizing position of lights
-* Randomizing colour & texture of object
-* Randomizing colour & texture of table object
-* Randomizing camera pose
-
-Refer to the code to see how these are done. Sample RGB images obtained can be seen below, but note that a depth image and binary mask image (i.e. where the image is in the scene) are also recorded.
-
-<p align="center">
-  <img src="./docs/0_0_box_poisson_016.png" width="256"/>
-  <img src="./docs/0_1_box_poisson_016.png" width="256"/>
-  <img src="./docs/0_2_box_poisson_016.png" width="256"/>
-  <img src="./docs/0_3_box_poisson_016.png" width="256"/>
-</p>
+Refer to the code to see how these are done.
