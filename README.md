@@ -1,4 +1,6 @@
-# grasping-random-pose
+# multi-contact-grasping
+
+This project is an extension of [a previous repo](https://github.com/mveres01/grasping) to 
 
 This project implements a simulated grasp-and-lift process in V-REP using the Barrett Hand, and interfaces through a python remote API. The primary goal of this project is to collect information on where individual contacts of a multi-fingered hand can be placed on an object, that will lead to a successful grasps. The emphasis on constraining the grasp to specific contacts is to promote future work in fine manipulation.
 
