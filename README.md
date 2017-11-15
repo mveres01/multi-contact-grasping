@@ -1,30 +1,35 @@
 # multi-contact-grasping
 
-This project implements a simulated grasp-and-lift process in V-REP using the Barrett Hand, with an interface through a python remote API.
+This project implements a simulated grasp-and-lift process in V-REP using the Barrett Hand, with an interface through a python remote API. The goal of this project is to collect information on where to place individual contacts of a gripper on an object. The emphasis on constraining the grasp to specific contacts is to promote future work in learning fine manipulation skills.
 
 <p align="center">
-  <img src="./docs/sim_overview.jpg" width="256"/>
+  <img src="./docs/sim_overview.JPG" width="400"/>
 </p>
-
-The goal of this project is to collect information on where to place individual contacts of a gripper on an object. The emphasis on constraining the grasp to specific contacts is to promote future work in learning fine manipulation skills.
 
 ## Recorded Information
 
-For both pre- and post-grasp, the following points of information are recorded:
-* Reference frames: palm, world, workspace, object
-* Object properties: mass, center of mass, inertia
-* Joint angles of gripper
-* Contact positions, forces, and normals
-* Images: RGB, depth, and a binary object mask
+For both pre- and post-grasp, the following information is recorded:
+
+|                   |                                 |
+| ----------------- | ------------------------------- |
+| Reference frames | palm, world, workspace, object |
+| Object properties | mass, center of mass, inertia |
+| Joint angles | All joints of Barrett Hand |
+| Contacts | positions, forces, and normals |
+| Images | RGB, depth, and a binary object mask |
 
 ## Image Randomization
 
-Images can be randomized according to the following properties using renderers within V-REP:
-* Number of lights
-* Position of lights
-* Colour & texture of object
-* Colour & texture of table object
-* Camera pose
+Synthetic images can be rendered within V-REP, and is done according to the following properties:
+
+|                   |                                 |
+| ----------------- | ------------------------------- |
+| Lighting | Number of lights, relative position |
+| Colour | Random RGB for object and workspace |
+| Colour Components | Ambient diffuse, specular, emission, auxiliary |
+| Texture Mapping | Plane, sphere, cylinder, cube |
+| Texture Pose | Position, Orientation |
+| Camera | Pose (Resolution, Field of View, near/far planes also supported) |
 
 # Requirements:
 
