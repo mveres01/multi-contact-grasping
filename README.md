@@ -8,13 +8,6 @@ This is an extension of [this](https://github.com/mveres01/grasping), which larg
   <img src="./docs/sim_overview.JPG" width="400"/>
 </p>
 
-## Requirements:
-
-* Python 2.7
-* V-REP (http://www.coppeliarobotics.com/downloads.html)
-* Mesh files in either .obj or .stl format. Note that meshes with complicated structures will have a negative impact on the dynamics simulation, so pure / convex meshes are preferred.
-* (optional) an Xserver if running V-REP in headless mode (i.e. no GUI). 
-
 ## Recorded Information
 
 For both pre- and post-grasp, the following information is recorded:
@@ -39,7 +32,12 @@ Image randomization is done according to the following properties:
 | Camera | Pose (Resolution, Field of View, near/far planes also supported) |
 
 
-# Initialization
+# Installation
+
+* Download and Install Python 2.7
+* Download and Install V-REP (http://www.coppeliarobotics.com/downloads.html)
+* (optional) Mesh files in either .obj or .stl format; a sample mesh has been provided.
+* (optional) an Xserver if running V-REP in headless mode (i.e. no GUI). 
 
 Install the trimesh library:
 ```
@@ -77,10 +75,11 @@ python postprocess_grasps.py
 to merge all data into a single file, remove potential duplicates from the dataset, and remove any extreme outliers. Feel free to modify this file to suit your needs. Data will be saved to _./output/grasping.hdf5_. 
 
 ## A Few things to Note:
-1. __The object is static during the pregrasp, and dynamically simulated during the lift__: This avoids potentially moving the object before the fingers come into contact with it.
-2. __The same object pose is used for each grasp attempt__: This avoids instances where an object may accidentally fall off the table, but can be removed as a constraint from the main script.
-3. __A grasp is successful if the object is in the grippers palm at the height of the lift__: A proximity sensor attached to the palm is used to record whether it detects an object in a nearby vicinity. A threshold is also specified on the number of contacts between the gripper and the object, which helps limit inconsistencies in the simulation dynamics.
-4. __Images are captured from a seperate script after simulations have finished__: To avoid introducing additional complexities into the collection script, images are collected after the main grasp collection has finished. This script will ultimately restore the state of the object and gripper during the grasp, and will position a camera randomly to collect images.
+1. __Complex meshes are difficult to properly simulate__:  Pure / convex meshes are preferred.
+2. __The object is static during the pregrasp, and dynamically simulated during the lift__: This avoids potentially moving the object before the fingers come into contact with it.
+3. __The same object pose is used for each grasp attempt__: This avoids instances where an object may accidentally fall off the table, but can be removed as a constraint from the main script.
+4. __A grasp is successful if the object is in the grippers palm at the height of the lift__: A proximity sensor attached to the palm is used to record whether it detects an object in a nearby vicinity. A threshold is also specified on the number of contacts between the gripper and the object, which helps limit inconsistencies in the simulation dynamics.
+5. __Images are captured from a seperate script after simulations have finished__: To avoid introducing additional complexities into the collection script, images are collected after the main grasp collection has finished. This script will ultimately restore the state of the object and gripper during the grasp, and will position a camera randomly to collect images.
 
 # Supplementing the Dataset with Images
 
