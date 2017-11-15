@@ -95,6 +95,9 @@ Refer to the code to see how these are done.
 
 
 # A Few things to Note:
+
+This project is still under construction, so things may still be changing. Additionally:
+
 1. __Complex meshes are difficult to properly simulate__:  Pure / convex meshes are preferred.
 2. __The object is static during the pregrasp, and dynamically simulated during the lift__: This avoids potentially moving the object before the fingers come into contact with it.
 3. __The same object pose is used for each grasp attempt__: This avoids instances where an object may accidentally fall off the table, but can be removed as a constraint from the main script.
