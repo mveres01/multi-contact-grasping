@@ -1,16 +1,19 @@
 # multi-contact-grasping
 
-This project implements a simulated grasp-and-lift process in V-REP using the Barrett Hand, with an interface through a python remote API. The goal of this project is to collect information on where to place individual contacts of a gripper on an object. The emphasis on constraining the grasp to specific contacts is to promote future work in learning fine manipulation skills.
+This project implements a simulated grasp-and-lift process in V-REP using the Barrett Hand, with an interface through a python remote API. The goal of this project is to collect information on where to place individual contacts of a gripper on an object. The emphasis on constraining the grasp to specific contacts is to promote future work in learning fine manipulation skills. 
+
+This is an extension of [this](https://github.com/mveres01/grasping), which largely simplifies the collection process, and introduces domain randomization into the image collection scheme.
 
 <p align="center">
   <img src="./docs/sim_overview.JPG" width="400"/>
 </p>
 
+
 ## Recorded Information
 
 For both pre- and post-grasp, the following information is recorded:
 
-|                   |                                 |
+| Recorded Information ||
 | ----------------- | ------------------------------- |
 | Reference frames | palm, world, workspace, object |
 | Object properties | mass, center of mass, inertia |
@@ -18,12 +21,10 @@ For both pre- and post-grasp, the following information is recorded:
 | Contacts | positions, forces, and normals |
 | Images | RGB, depth, and a binary object mask |
 
-## Image Randomization
+Image randomization is done according to the following properties:
 
-Synthetic images can be rendered within V-REP, and is done according to the following properties:
-
-|                   |                                 |
-| ----------------- | ------------------------------- |
+|Image Properties ||
+| ------------------------------- | ------------------------------- |
 | Lighting | Number of lights, relative position |
 | Colour | Random RGB for object and workspace |
 | Colour Components | Ambient diffuse, specular, emission, auxiliary |
