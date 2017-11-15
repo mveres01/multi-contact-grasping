@@ -8,6 +8,12 @@ This is an extension of [this](https://github.com/mveres01/grasping), which larg
   <img src="./docs/sim_overview.JPG" width="400"/>
 </p>
 
+## Requirements:
+
+* Python 2.7
+* V-REP (http://www.coppeliarobotics.com/downloads.html)
+* Mesh files in either .obj or .stl format. Note that meshes with complicated structures will have a negative impact on the dynamics simulation, so pure / convex meshes are preferred.
+* (optional) an Xserver if running V-REP in headless mode (i.e. no GUI). 
 
 ## Recorded Information
 
@@ -32,14 +38,8 @@ Image randomization is done according to the following properties:
 | Texture Pose | Position, Orientation |
 | Camera | Pose (Resolution, Field of View, near/far planes also supported) |
 
-# Requirements:
 
-* Python 2.7
-* V-REP (http://www.coppeliarobotics.com/downloads.html)
-* Mesh files in either .obj or .stl format. Note that meshes with complicated structures will have a negative impact on the dynamics simulation, so pure / convex meshes are preferred.
-* (optional) an Xserver if running V-REP in headless mode (i.e. no GUI). 
-
-## Initialization
+# Initialization
 
 Install the trimesh library:
 ```
