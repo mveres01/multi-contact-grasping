@@ -2,36 +2,27 @@
 
 This project implements a simulated grasp-and-lift process in V-REP using the Barrett Hand, with an interface through a python remote API.
 
-# Overview
-
-The primary goal of this project is to collect information on where individual contacts of a multi-fingered hand can be placed on an object, that will lead to successful grasps. The emphasis on constraining the grasp to specific contacts is to promote future work in learning fine manipulation skills.
-
-This project is an extension of [this repo](https://github.com/mveres01/grasping), largely focusing on simplifying the pipeline, integration through a python remote API, and image-domain randomization.
+The goal of this project is to collect information on where to place individual contacts of a gripper on an object. The emphasis on constraining the grasp to specific contacts is to promote future work in learning fine manipulation skills.
 
 ## Recorded Information
 
-TODO
+For both pre- and post-grasp, the following points of information are recorded:
 
-## Image Domain Randomization
+* Reference frames: palm, world, workspace, object
+* Object properties: mass, center of mass, inertia
+* Joint angles of Gripper
+* Contact positions, forces, and normals
+* Images: RGB, depth, and a binary object mask
 
-TO FINISH
+## Image Randomization
 
-Randomization of images is done with respect to the following scene elements:
+Randomization of images is done with respect to the following elements:
 
 * Number of lights
 * Position of lights
 * Colour & texture of object
 * Colour & texture of table object
 * Camera pose
-
-<p align="center">
-  <img src="./docs/0_0_box_poisson_016.png" width="256"/>
-  <img src="./docs/0_1_box_poisson_016.png" width="256"/>
-  <img src="./docs/0_2_box_poisson_016.png" width="256"/>
-  <img src="./docs/0_3_box_poisson_016.png" width="256"/>
-  <img src="./docs/0_4_box_poisson_016.png" width="256"/>
-</p>
-
 
 # Requirements:
 
@@ -92,5 +83,13 @@ python collect_images.py
 ```
 
 which will open up or connect to a running V-REP scene, and begin collecting images using data from _./output/processed/grasping.hdf5_. This script uses the state of the simulator at the time of the grasp (i.e. the object pose, gripper pose, angles, etc ...) and restores those parameters before taking an image. 
+
+<p align="center">
+  <img src="./docs/0_0_box_poisson_016.png" width="256"/>
+  <img src="./docs/0_1_box_poisson_016.png" width="256"/>
+  <img src="./docs/0_2_box_poisson_016.png" width="256"/>
+  <img src="./docs/0_3_box_poisson_016.png" width="256"/>
+  <img src="./docs/0_4_box_poisson_016.png" width="256"/>
+</p>
 
 Refer to the code to see how these are done.
