@@ -8,6 +8,8 @@ This is an extension of [a previous project](https://github.com/mveres01/graspin
   <img src="./docs/sim_overview.JPG" width="400"/>
 </p>
 
+__Sample Data__: To come
+
 ## Recorded Information
 
 For both pre- and post-grasp, the following information is recorded:
@@ -98,9 +100,9 @@ Refer to the code to see how these are done.
 
 This project is still under construction, so things may still be changing. Additionally:
 
-1. __Complex meshes are difficult to properly simulate__:  Pure / convex meshes are preferred.
+1. __Complex meshes are difficult to properly simulate__:  Pure / convex meshes are preferred. There is an option to approximate complex objects with a convex hull, but note that this will change the physical shape of the object, and in some cases may yield weird-looking grasps (i.e. not touching the mesh surface, but touching the hulls surface).
 2. __The object is static during the pregrasp, and dynamically simulated during the lift__: This avoids potentially moving the object before the fingers come into contact with it.
 3. __The same object pose is used for each grasp attempt__: This avoids instances where an object may accidentally fall off the table, but can be removed as a constraint from the main script.
 4. __A grasp is successful if the object is in the grippers palm at the height of the lift__: A proximity sensor attached to the palm is used to record whether it detects an object in a nearby vicinity. A threshold is also specified on the number of contacts between the gripper and the object, which helps limit inconsistencies in the simulation dynamics.
-5. __Images are captured from a seperate script after simulations have finished__: To avoid introducing additional complexities into the collection script, images are collected after the main grasp collection has finished. This script will ultimately restore the state of the object and gripper during the grasp, and will position a camera randomly to collect images.
+5. __Images are captured from a seperate script after simulations have finished__: To avoid introducing extra complexity into the collection script, it is recommended to collect images _after_ experiments have finished running. However, you can still collect images while running if you wish. See src/collect_images.py for an example of how it's done.
 7. __You do not need to post-process the collected data__: This is just to ensure there's no duplicate grasps in the dataset, but you can run collect images by modifying the script to open the dataset you've collected for an object.
