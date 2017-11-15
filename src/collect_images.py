@@ -7,14 +7,12 @@ import h5py
 import numpy as np
 import cPickle as pickle
 import lib
-from lib.python_config import (config_output_dir,
-                               config_output_dataset_path,
-                               config_mesh_dir,
-                               project_dir)
+from lib.config import (config_output_dir, config_output_dataset_path,
+                        config_mesh_dir, project_dir)
 from lib import vrep
 vrep.simxFinish(-1) # just in case, close all opened connections
 
-import simulation as SI
+import simulator as SI
 
 sim = SI.SimulatorInterface(port=19999)
 

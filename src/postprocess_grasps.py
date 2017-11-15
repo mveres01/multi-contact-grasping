@@ -12,8 +12,8 @@ from lib.utils import (format_htmatrix, invert_htmatrix,
                         get_unique_idx, convert_grasp_frame)
 
 # Save/data directories
-from lib.python_config import (config_output_collected_dir,
-                               config_output_dataset_path)
+from lib.config import (config_output_collected_dir,
+                        config_output_dataset_path)
 
 def get_outlier_mask(data_in, sigma=3):
     """Find dataset outliers by whether or not it falls within a given number

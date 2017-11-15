@@ -13,10 +13,9 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 import lib
 import lib.utils
-from lib.python_config import (config_mesh_dir,
-                               config_output_collected_dir)
+from lib.config import config_mesh_dir, config_output_collected_dir
 
-import simulation as SI
+import simulator as SI
 
 
 def load_mesh(mesh_path):
