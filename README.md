@@ -2,22 +2,24 @@
 
 This project implements a simulated grasp-and-lift process in V-REP using the Barrett Hand, with an interface through a python remote API.
 
+<p align="center">
+  <img src="./docs/sim_overview.jpg" width="256"/>
+</p>
+
 The goal of this project is to collect information on where to place individual contacts of a gripper on an object. The emphasis on constraining the grasp to specific contacts is to promote future work in learning fine manipulation skills.
 
 ## Recorded Information
 
 For both pre- and post-grasp, the following points of information are recorded:
-
 * Reference frames: palm, world, workspace, object
 * Object properties: mass, center of mass, inertia
-* Joint angles of Gripper
+* Joint angles of gripper
 * Contact positions, forces, and normals
 * Images: RGB, depth, and a binary object mask
 
 ## Image Randomization
 
-Randomization of images is done with respect to the following elements:
-
+Images can be randomized according to the following properties using renderers within V-REP:
 * Number of lights
 * Position of lights
 * Colour & texture of object
@@ -33,11 +35,12 @@ Randomization of images is done with respect to the following elements:
 
 ## Initialization
 
-TODO: Add requirements.txt
+Install the trimesh library:
+```
+pip install trimesh>=2.20.21
+```
 
-```
-pip install -r requirements.txt
-```
+Add the remote API interfaces: 
 
 * Copy __vrep.py__ and __vrepConst.py__ from 
 _path/to/vrep/V-REP_PRO_EDU/programming/remoteApiBindings/python/python/_ to _./lib_. You will also need to copy the following library (use the 32/64-bit version depending on what version of V-REP you've downloaded):
