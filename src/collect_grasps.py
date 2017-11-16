@@ -119,8 +119,8 @@ def generate_candidates(mesh, num_samples=1000, noise_level=0.05,
 
     # Uncomment to view the generated grasp candidates
     matrices = np.vstack(matrices)
-    plot_mesh_with_normals(mesh, matrices, up_vector)
-    plt.show()
+    #plot_mesh_with_normals(mesh, matrices, up_vector)
+    #plt.show()
 
     return matrices
 
