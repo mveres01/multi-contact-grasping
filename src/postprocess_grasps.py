@@ -1,19 +1,16 @@
 import os
 import sys
-sys.path.append('..')
 import glob
 import h5py
-
 import numpy as np
-from PIL import Image
-from sklearn.decomposition import PCA
+
+sys.path.append('..')
 
 from lib.utils import (format_htmatrix, invert_htmatrix,
-                        get_unique_idx, convert_grasp_frame)
-
-# Save/data directories
+                       get_unique_idx, convert_grasp_frame)
 from lib.config import (config_output_collected_dir,
                         config_output_dataset_path)
+
 
 def get_outlier_mask(data_in, sigma=3):
     """Find dataset outliers by whether or not it falls within a given number
@@ -33,7 +30,7 @@ def get_outlier_mask(data_in, sigma=3):
     std = np.std(data_in, axis=0)
 
     # Create a boolean mask of data within *m* std
-    mask = abs(data_in - mean) < sigma*std
+    mask = abs(data_in - mean) < sigma * std
     mask = np.sum(mask, axis=1)
 
     # Want samples where all variables are within a 'good' region
@@ -64,7 +61,8 @@ def postprocess(h5_pregrasp, h5_postgrasp):
 
     # Clean the dataset: Remove duplicate pregrasp poses via frame_work2palm
     unique = get_unique_idx(pregrasp['frame_work2palm'], -1, 1e-1)
-    print 'Number of unique: ', len(unique), len(pregrasp['frame_work2palm'])
+    print('%d / %d unique' % (len(unique), len(pregrasp['frame_work2palm'])))
+
     pregrasp = remove_from_dataset(pregrasp, unique)
     postgrasp = remove_from_dataset(postgrasp, unique)
 
@@ -92,11 +90,6 @@ def postprocess(h5_pregrasp, h5_postgrasp):
 def merge_datasets(data_dir, save_path=config_output_dataset_path):
     """Given a directory, load a set of hdf5 files given as a list."""
 
-    # We'll append all data into a list before shuffle train/test/valid
-    grasps = []
-    misc_props = {}
-    num_thresh = 10
-
     data_list = glob.glob(os.path.join(data_dir, '*.hdf5'))
 
     # Write each of the train/test/valid splits to file
@@ -116,9 +109,9 @@ def merge_datasets(data_dir, save_path=config_output_dataset_path):
                                           input_file['postgrasp'])
 
         if pregrasp is None or postgrasp is None:
-            print '%s no data returned!'%fname
+            print '%s no data returned!' % fname
             continue
-        elif pregrasp['frame_work2palm'].shape[0] < num_thresh:
+        elif pregrasp['frame_work2palm'].shape[0] < 1:
             continue
 
         group = savefile.create_group(object_name)
@@ -134,7 +127,6 @@ def merge_datasets(data_dir, save_path=config_output_dataset_path):
         pregrasp_group.create_dataset('grasp', data=pregrasp_data, compression='gzip')
         for key in pregrasp.keys():
             pregrasp_group.create_dataset(key, data=pregrasp[key], compression='gzip')
-
 
         postgrasp_group = group.create_group('postgrasp')
 

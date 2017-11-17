@@ -1,11 +1,10 @@
 import os
 import sys
-sys.path.append('..')
 from sys import platform
+from distutils.spawn import find_executable
 import subprocess
 import time
 import numpy as np
-import trimesh.transformations as tf
 
 import lib
 import lib.utils
@@ -13,21 +12,7 @@ from lib.config import project_dir, config_simulation_path
 from lib import vrep
 vrep.simxFinish(-1)
 
-
-def is_listening(ip='127.0.0.1', port=19997):
-    """Checks whether a program is listening on a port already or not"""
-
-    if platform not in ['linux', 'linux2']:
-        raise Exception('You must be running Linux to use this function.')
-
-    # Get a list of all current open / connected ports
-    try:
-        netstat = subprocess.Popen(['netstat', '-nao'], stdout=subprocess.PIPE)
-    except Exception as e:
-        raise e
-    ports = netstat.communicate()[0]
-
-    return ip + ':' + str(port) in ports
+sys.path.append('..')
 
 
 def wait_for_signal(clientID, signal, mode=vrep.simx_opmode_oneshot_wait):
@@ -48,16 +33,16 @@ def decode_images(float_string, near_clip, far_clip, res_x=128, res_y=128):
     """
 
     assert len(float_string) == res_x * res_y * 7, \
-        'Image data has length <%d> but expected length <%d>'%\
+        'Image data has length <%d> but expected length <%d>' %\
         (len(float_string, res_x, res_y * 7))
 
     images = np.asarray(float_string)
 
-    depth = images[:res_x*res_y].reshape(res_y, res_x, 1)
-    depth = near_clip + depth*(far_clip - near_clip)
+    depth = images[:res_x * res_y].reshape(res_y, res_x, 1)
+    depth = near_clip + depth * (far_clip - near_clip)
 
-    rgb = images[res_x*res_y:4*res_x*res_y].reshape(res_y, res_x, 3)
-    mask = images[4*res_x*res_y:].reshape(res_y, res_x, 3)[:, :, 0:1]
+    rgb = images[res_x * res_y:4 * res_x * res_y].reshape(res_y, res_x, 3)
+    mask = images[4 * res_x * res_y:].reshape(res_y, res_x, 3)[:, :, 0:1]
 
     # The image rows are inverted from what the camera sees in simulator
     images = np.float32(np.concatenate([rgb, depth, mask], axis=2))[::-1]
@@ -77,7 +62,7 @@ def decode_grasp(header, line):
     for i in range(0, len(split), 2):
 
         name = str(split[i][1:-1])
-        n_items = int(split[i+1])
+        n_items = int(split[i + 1])
         subset = line[:, current_pos:current_pos + n_items]
 
         try:
@@ -93,20 +78,27 @@ def decode_grasp(header, line):
 def spawn_simulation(port, vrep_path, scene_path):
     """Spawns a child process using screen and starts a remote VREP server."""
 
-    if platform not in ['linux', 'linux2']:
-        raise Exception('Must be running on Linux to spawn a simulation.')
+    using_linux = platform in ['linux', 'linux2']
 
-    vrep_path = 'vrep.sh' if vrep_path is None else vrep_path
+    if vrep_path is None:
+        vrep_path = 'vrep.sh' if using_linux else '"vrep.exe"'
+
+    if find_executable(vrep_path) is None and not os.path.exists(vrep_path):
+        raise Exception('Cannot find %s in PATH to spawn a sim.' % vrep_path)
+    if platform not in ['linux', 'linux2']:
+        vrep_path = '"%s"' % vrep_path
 
     # Command to launch VREP
-    vrep_cmd = '%s -h -q -s -gREMOTEAPISERVERSERVICE_%d_FALSE_TRUE %s'% \
-               (vrep_path, port, scene_path)
+    vrep_cmd = '%s -q -s -gREMOTEAPISERVERSERVICE_%d_FALSE_TRUE %s' % \
+        (vrep_path, port, scene_path)
 
-    # Command to launch VREP + detach from screen
-    bash_cmd = 'screen -dmS port%d bash -c "export DISPLAY=:1 ;'\
-               'ulimit -n 4096; %s " '%(port, vrep_cmd)
+    # If we're using linux, we'll spawn a screen and launch a sim from there.
+    # This is useful when collecting data for a long time
+    if platform in ['linux', 'linux2']:
+        vrep_cmd = 'screen -dmS port%d bash -c "export DISPLAY=:1 ;'\
+            'ulimit -n 4096; %s " ' % (port, vrep_cmd)
 
-    process = subprocess.Popen(bash_cmd, shell=True)
+    process = subprocess.Popen(vrep_cmd, shell=True)
     time.sleep(1)
     return process
 
@@ -129,47 +121,41 @@ class SimulatorInterface(object):
     is running_. Here, V-REP must be running in order to communicate with
     it, and prevents us from starting a stopped simulation.
 
-    When running with linux, it's easier to start a continuous service by
-    launcing V-REP from the command line and attaching it to a screen session.
+    Here we'll mostly take advantage of mode (2).
     """
 
     def __init__(self, port, ip='127.0.0.1', vrep_path=None, scene_path=None):
 
-
         if not isinstance(port, int):
-            raise Exception('Port <%s> must be of type <int>'%port)
+            raise Exception('Port <%s> must be of type <int>' % port)
         elif not isinstance(ip, str):
-            raise Exception('IP address <%s> must be of type <str>'%ip)
+            raise Exception('IP address <%s> must be of type <str>' % ip)
+
+        # See if there's a simulation already listening on this port
+        clientID = self._start_communication(ip, port)
+
+        # If there's nothing listening, we can try spawning a sim on linux
+        if clientID is None:
+
+            if scene_path is None:
+                scene_path = config_simulation_path
+            if not os.path.exists(scene_path):
+                raise Exception('Scene <%s> not found' % scene_path)
+
+            print('Spawning a Continuous Server on port <%d>' % port)
+            spawn_simulation(port, vrep_path, scene_path)
+
+            # Try starting communication again
+            clientID = self._start_communication(ip, port)
+
+            if clientID is None:
+                raise Exception('Unable to connect to address <%s> on port '
+                                '<%d>. Check that the simulator is currently '
+                                'running, or the continuous service was '
+                                'started successfully.' % (ip, port))
 
         self.port = port
         self.ip = ip
-        self.clientID = None
-
-        # See if there's a simulation already listening on this port
-        clientID = self._start_communication()
-
-        # If there's nothing listening, we can try spawning a sim on linux
-        if clientID == -1:
-            if platform in ['linux', 'linux2'] and not is_listening(ip, port):
-
-                if scene_path is None:
-                    scene_path = config_simulation_path
-                if not os.path.exists(scene_path):
-                    raise Exception('Scene <%s> not found'%scene_path)
-
-                print('Spawning a Continuous Server on port <%d>'%port)
-                spawn_simulation(port, vrep_path, scene_path)
-
-                # Try starting communication
-                clientID = self._start_communication()
-
-        if clientID == -1:
-            raise Exception('Unable to connect to address <%s> on port '\
-                            '<%d>. Check that the simulator is currently '\
-                            'running, or the continuous service was started'\
-                            'successfully.'%(ip, port))
-
-        # Have communication
         self.clientID = clientID
 
         # Tell the scene to start running
@@ -188,22 +174,26 @@ class SimulatorInterface(object):
         vrep.simxClearStringSignal(self.clientID, 'pregrasp', mode)
         vrep.simxClearStringSignal(self.clientID, 'postgrasp', mode)
 
-    def _start_communication(self, wait_until_start_communicationed=True,
+    def _start_communication(self, ip, port,
+                             wait_until_start_communicationed=True,
                              do_not_reconnect_once_disconnected=False,
                              time_out_in_ms=15000, comm_thread_cycle_in_ms=5):
         """Requests a communication pipe with the simulator."""
 
-        return vrep.simxStart(self.ip, self.port, wait_until_start_communicationed,
-                              do_not_reconnect_once_disconnected, time_out_in_ms,
-                              comm_thread_cycle_in_ms)
+        clientID = vrep.simxStart(ip, port,
+                                  wait_until_start_communicationed,
+                                  do_not_reconnect_once_disconnected,
+                                  time_out_in_ms,
+                                  comm_thread_cycle_in_ms)
+        return clientID if clientID != -1 else None
 
     def _start_simulation(self):
         """Tells a VREP scene to start execution."""
 
-        if self.clientID is None or self.clientID == -1:
-            raise Exception('Client is not connected to V-REP server, so '\
-                            'start the simulation. Check the sim is running, '\
-                            'and try connecting again.')
+        if self.clientID is None:
+            raise Exception('Client is not connected to V-REP server and '
+                            'cannot start the simulation. Check the sim is '
+                            'running and try connecting again.')
 
         r = vrep.simxStartSimulation(self.clientID, vrep.simx_opmode_blocking)
 
@@ -221,13 +211,14 @@ class SimulatorInterface(object):
 
         size = matrix.size
         if size not in [12, 16]:
-            raise Exception('Length of input matrix must be either [12, 16] ' \
-                            'but provided length was <%d>'%size)
+            raise Exception('Length of input matrix must be either [12, 16] '
+                            'but provided length was <%d>' % size)
         matrix_ht = matrix.reshape(size // 4, 4)
 
         return matrix_ht[:3].flatten().tolist()
 
-    def load_object(self, object_path, com, mass, inertia, use_convex_as_respondable=False):
+    def load_object(self, object_path, com, mass, inertia,
+                    use_convex_as_respondable=False):
         """Loads an object into the simulator given it's full path.
 
         This function also sets the initial center of mass, mass, and
@@ -245,7 +236,7 @@ class SimulatorInterface(object):
 
         if '.obj' in object_path:
             file_format = 0
-        elif '.stl' in object_path: # 3 is regular stl, 4 is binary stl & default
+        elif '.stl' in object_path:
             file_format = 4
         else:
             raise Exception('File format must be in {.obj, .stl}')
@@ -257,10 +248,11 @@ class SimulatorInterface(object):
         in_floats.extend([mass])
         in_floats.extend(inertia)
 
-        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'loadObject', in_ints,
-             in_floats, [object_path], empty_buff, vrep.simx_opmode_blocking)
+                                        vrep.sim_scripttype_childscript,
+                                        'loadObject', in_ints, in_floats,
+                                        [object_path], bytearray(),
+                                        vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error loading object!')
@@ -270,7 +262,7 @@ class SimulatorInterface(object):
         return self.get_pose_by_name('object')
 
     def set_object_pose(self, frame_work2obj):
-        """Sets the pose for the current object to be WRT the workspace frame."""
+        """Sets the pose for the mesh object to be WRT the workspace frame."""
         return self.set_pose_by_name('object', frame_work2obj)
 
     def set_gripper_pose(self, frame_work2palm, reset_config=True):
@@ -281,10 +273,11 @@ class SimulatorInterface(object):
         """
         frame = self._format_matrix(frame_work2palm)
 
-        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'setGripperPose', [reset_config],
-             frame, [], empty_buff, vrep.simx_opmode_blocking)
+                                        vrep.sim_scripttype_childscript,
+                                        'setGripperPose', [reset_config],
+                                        frame, [], bytearray(),
+                                        vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting gripper pose!')
@@ -295,61 +288,64 @@ class SimulatorInterface(object):
         The retrieved pose is with respect to the workspace frame.
         """
 
-        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'getPoseByName', [],
-             [], [name], empty_buff, vrep.simx_opmode_blocking)
+                                        vrep.sim_scripttype_childscript,
+                                        'getPoseByName', [], [], [name],
+                                        bytearray(), vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            raise Exception('Error getting pose for <%s>!'%name)
+            raise Exception('Error getting pose for <%s>!' % name)
         return lib.utils.format_htmatrix(r[2])
 
     def set_pose_by_name(self, name, frame_work2pose):
-        """Given a name of an object in the scene, set pose WRT to workspace."""
+        """Sets the pose of a scene object (by name) WRT workspace."""
 
         frame = self._format_matrix(frame_work2pose)
 
-        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'setPoseByName', [],
-             frame, [name], empty_buff, vrep.simx_opmode_blocking)
+                                        vrep.sim_scripttype_childscript,
+                                        'setPoseByName', [], frame, [name],
+                                        bytearray(), vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting pose for name <%s>!'%name)
+            raise Exception('Error setting pose for name <%s>!' % name)
 
     def get_joint_position_by_name(self, name):
         """Given a name of a joint, get the current position"""
 
-        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'getJointPositionByName', [],
-             [], [name], empty_buff, vrep.simx_opmode_blocking)
+                                        vrep.sim_scripttype_childscript,
+                                        'getJointPositionByName', [], [],
+                                        [name], bytearray(),
+                                        vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting joint position for <%s>!'%name)
+            raise Exception('Error setting joint position for <%s>!' % name)
         return r[2][0]
 
     def set_joint_position_by_name(self, name, position):
         """Given a name of a joint, get the current position"""
 
-        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'setJointPositionByName', [],
-             [position], [name], empty_buff, vrep.simx_opmode_blocking)
+                                        vrep.sim_scripttype_childscript,
+                                        'setJointPositionByName', [],
+                                        [position], [name], bytearray(),
+                                        vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting joint position for <%s>!'%name)
+            raise Exception('Error setting joint position for <%s>!' % name)
 
     def set_gripper_kinematics_mode(self, mode='forward'):
 
         joint_modes = ['forward', 'inverse']
         if mode not in joint_modes:
-            raise Exception('Joint mode must be in %s'%joint_modes)
+            raise Exception('Joint mode must be in %s' % joint_modes)
 
-        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'setJointKinematicsMode', [],
-             [], [mode], empty_buff, vrep.simx_opmode_blocking)
+                                        vrep.sim_scripttype_childscript,
+                                        'setJointKinematicsMode', [], [],
+                                        [mode], bytearray(),
+                                        vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting gripper kinematics mode.')
@@ -371,10 +367,10 @@ class SimulatorInterface(object):
         # them here to make calls in the simulator straightforward
         props = [not p for p in props]
 
-        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'setGripperProperties', props,
-             [], [], empty_buff, vrep.simx_opmode_blocking)
+                                        vrep.sim_scripttype_childscript,
+                                        'setGripperProperties', props, [], [],
+                                        bytearray(), vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             raise Exception('Error setting gripper properties.')
@@ -382,7 +378,7 @@ class SimulatorInterface(object):
     def query(self, frame_work2cam, frame_world2work=None,
               resolution=128, rgb_near_clip=0.2, rgb_far_clip=10.0,
               depth_far_clip=1.25, depth_near_clip=0.2, p_light_off=0.25,
-              p_light_mag=0.1, camera_fov=70*np.pi/180., reorient_up=True,
+              p_light_mag=0.1, camera_fov=70 * np.pi / 180., reorient_up=True,
               randomize_texture=True, randomize_colour=True,
               randomize_lighting=True,
               texture_path=os.path.join(project_dir, 'texture.png')):
@@ -399,7 +395,7 @@ class SimulatorInterface(object):
         -------
         images: 4-d array of shape (1, channels, rows, cols), where channels
             [0, 1, 2] = RGB, [3] = Depth, [4] = Object mask
-        frame_work2cam: 4x4 homogeneous transformat matrix from workspace to camera
+        frame_work2cam: 4x4 HT matrix of camera WRT workspace
         """
 
         if randomize_texture and not os.path.exists(texture_path):
@@ -407,13 +403,13 @@ class SimulatorInterface(object):
             randomize_texture = False
 
         # Force the camera to always be looking "upwards"
-        if reorient_up:
-            if frame_world2work is not None:
-                frame_work2cam = lib.utils.reorient_up_direction( \
-                    frame_work2cam, frame_world2work, direction_up=[0, 0, 1])
-            else:
-                print('Must provide <frame_world2work> in order to reorient '
-                      'the cameras y-direction to be upwards.')
+        if reorient_up and frame_world2work is not None:
+            frame_work2cam = lib.utils.reorient_up_direction(
+                frame_work2cam, frame_world2work, direction_up=[0, 0, 1])
+        elif reorient_up:
+            print('Must provide <frame_world2work> in order to reorient the '
+                  'cameras y-direction to be upwards.')
+
         frame_work2cam = self._format_matrix(frame_work2cam)
 
         in_ints = [resolution]
@@ -434,10 +430,11 @@ class SimulatorInterface(object):
         in_strings = [texture_path]
 
         # Make a call to the simulator
-        empty_buff = bytearray()
         r = vrep.simxCallScriptFunction(self.clientID, 'remoteApiCommandServer',
-             vrep.sim_scripttype_childscript, 'queryCamera', in_ints,
-             in_floats, in_strings, empty_buff, vrep.simx_opmode_blocking)
+                                        vrep.sim_scripttype_childscript,
+                                        'queryCamera', in_ints, in_floats,
+                                        in_strings, bytearray(),
+                                        vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
             return None, None
@@ -462,8 +459,7 @@ class SimulatorInterface(object):
 
         self._clear_signals()
 
-        self.set_gripper_properties(visible=True, renderable=False,
-                                    dynamic=True, collidable=False)
+        self.set_gripper_properties(visible=True, dynamic=True)
 
         frame = self._format_matrix(frame_work2obj)
 
@@ -492,8 +488,8 @@ class SimulatorInterface(object):
         is able to interact with the object & table.
         """
 
-        # The simulator is going to send these signals back to us, so clear them
-        # to make sure we're not accidentally reading old values
+        # The simulator is going to send these signals back to us, so clear
+        # them to make sure we're not accidentally reading old values
         self._clear_signals()
 
         self.set_gripper_properties(visible=True, dynamic=True,

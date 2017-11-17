@@ -1,20 +1,18 @@
 import os
 import sys
-sys.path.append('..')
 import glob
 import h5py
 import numpy as np
 import trimesh
-import matplotlib
-matplotlib.use('agg')
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-import lib
+sys.path.append('..')
+
+import ..lib
 import lib.utils
 from lib.config import config_mesh_dir, config_output_collected_dir
-
 import simulator as SI
 
 
@@ -30,7 +28,7 @@ def load_mesh(mesh_path):
     return mesh
 
 
-def plot_mesh_with_normals(mesh, matrices, direction_vec, normals=None, axis=None):
+def plot_mesh_with_normals(mesh, matrices, direction_vec, axis=None):
     """Visualize where we will sample grasp candidates from
 
     Parameters
@@ -70,11 +68,6 @@ def plot_mesh_with_normals(mesh, matrices, direction_vec, normals=None, axis=Non
         direction = np.dot(transform[:3, :3], dvec)
         direction = np.atleast_2d(direction).T
 
-        # The plotted normals and grasp approach should be overlapping
-        if normals is not None:
-            to_plot = np.hstack([gripper_point, -np.atleast_2d(normals[i])])
-            axis.quiver(*to_plot, color='r', length=0.1)
-
         a = np.hstack([gripper_point, -direction]).flatten()
         axis.quiver(*a, color='k', length=0.1)
 
@@ -90,9 +83,8 @@ def generate_candidates(mesh, num_samples=1000, noise_level=0.05,
     # Defines the up-vector for the workspace frame
     up_vector = np.asarray([0, 0, -1])
 
-    #points = sample.sample_surface(mesh, num_samples)
     points = trimesh.sample.sample_surface_even(mesh, num_samples)
-    normals, matrices = [], []
+    matrices = []
 
     # Find the normals corresponding to the sampled points
     triangles = mesh.triangles_center
@@ -117,10 +109,11 @@ def generate_candidates(mesh, num_samples=1000, noise_level=0.05,
 
         matrices.append(matrix[:3].flatten())
 
-    # Uncomment to view the generated grasp candidates
     matrices = np.vstack(matrices)
-    #plot_mesh_with_normals(mesh, matrices, up_vector)
-    #plt.show()
+
+    # Uncomment to view the generated grasp candidates
+    # plot_mesh_with_normals(mesh, matrices, up_vector)
+    # plt.show()
 
     return matrices
 
@@ -154,7 +147,6 @@ def collect_grasps(mesh_path, sim,
                                      noise_level=candidate_noise_level,
                                      gripper_offset=candidate_offset)
 
-
     # Compute an initial object resting pose by dropping the object from a
     # given position / height above the workspace table
     mass = mesh.mass_properties['mass'] * 10
@@ -167,13 +159,12 @@ def collect_grasps(mesh_path, sim,
 
     sim.run_threaded_drop(initial_pose)
 
-
     # Reset the object on each grasp attempt to its resting pose. Note this
     # doesn't have to be done, but it avoids instances where the object may
     # subsequently have fallen off the table
     object_pose = sim.get_object_pose()
 
-    num_successful_grasps = 0
+    num_successful = 0
     for count, row in enumerate(candidates):
 
         work2candidate = np.dot(object_pose, lib.utils.format_htmatrix(row))
@@ -203,12 +194,11 @@ def collect_grasps(mesh_path, sim,
                 continue
 
             success = bool(int(postgrasp['all_in_contact']))
-            print('Grasp %d/%d for object: %s \tSuccess? %s'%\
+            print('Grasp %d/%d for object: %s \tSuccess? %s' %
                   (count, len(candidates), mesh_name, success))
 
-            if success is False: # Only save successful grasps
+            if success is False:  # Only save successful grasps
                 continue
-
 
             # Create initial structures if dataset is currently empty, then
             # save grasp attempt
@@ -221,24 +211,28 @@ def collect_grasps(mesh_path, sim,
                 datafile.create_dataset('mesh', data=mesh_path)
 
             for key, val in pregrasp.iteritems():
-                pregrasp_group[key].resize((num_successful_grasps + 1, val.shape[-1]))
-                pregrasp_group[key][num_successful_grasps] = val
+                pregrasp_group[key].resize((num_successful + 1, val.shape[-1]))
+                pregrasp_group[key][num_successful] = val
             for key, val in postgrasp.iteritems():
-                postgrasp_group[key].resize((num_successful_grasps + 1, val.shape[-1]))
-                postgrasp_group[key][num_successful_grasps] = val
+                postgrasp_group[key].resize((num_successful + 1, val.shape[-1]))
+                postgrasp_group[key][num_successful] = val
 
-            num_successful_grasps += 1
+            num_successful += 1
 
     datafile.close()
-    print 'Finished Collecting!'
+    print('Finished Collecting!')
 
 
 if __name__ == '__main__':
 
     meshes = glob.glob(os.path.join(config_mesh_dir, '*'))
     meshes = [m for m in meshes if any(x in m for x in ['.stl', '.obj'])]
-    sim = SI.SimulatorInterface(port=19997)
+
+    # vrep_path = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'
+    # sim = SI.SimulatorInterface(port=19997, vrep_path=vrep_path)
+    sim = SI.SimulatorInterface(port=19997, vrep_path=None)
+
     for m in meshes:
         mesh_path = os.path.join(config_mesh_dir, m)
-        print 'mesh_path: ', mesh_path
+        print('mesh_path: ', mesh_path)
         collect_grasps(mesh_path, sim)
