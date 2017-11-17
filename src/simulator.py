@@ -6,13 +6,13 @@ import subprocess
 import time
 import numpy as np
 
+sys.path.append('..')
+
 import lib
 import lib.utils
 from lib.config import project_dir, config_simulation_path
 from lib import vrep
 vrep.simxFinish(-1)
-
-sys.path.append('..')
 
 
 def wait_for_signal(clientID, signal, mode=vrep.simx_opmode_oneshot_wait):
@@ -199,6 +199,7 @@ class SimulatorInterface(object):
                             'running and try connecting again.')
 
         r = vrep.simxStartSimulation(self.clientID, vrep.simx_opmode_blocking)
+        print 'r: ', r, 'clientID: ', self.clientID
 
         if r != vrep.simx_return_ok:
             raise Exception('Unable to start simulation.')
@@ -258,7 +259,7 @@ class SimulatorInterface(object):
                                         vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            raise Exception('Error loading object!')
+            raise Exception('Error loading object! Return code ', r)
 
     def get_object_pose(self):
         """Queries the simulator for current object pose WRT the workspace."""
