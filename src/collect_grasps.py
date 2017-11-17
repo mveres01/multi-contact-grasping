@@ -10,7 +10,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 sys.path.append('..')
 
-import ..lib
+import lib
 import lib.utils
 from lib.config import config_mesh_dir, config_output_collected_dir
 import simulator as SI
@@ -228,9 +228,11 @@ if __name__ == '__main__':
     meshes = glob.glob(os.path.join(config_mesh_dir, '*'))
     meshes = [m for m in meshes if any(x in m for x in ['.stl', '.obj'])]
 
+    # Sample way for calling VREP on windows:
     # vrep_path = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'
     # sim = SI.SimulatorInterface(port=19997, vrep_path=vrep_path)
-    sim = SI.SimulatorInterface(port=19997, vrep_path=None)
+
+    sim = SI.SimulatorInterface(port=19997)
 
     for m in meshes:
         mesh_path = os.path.join(config_mesh_dir, m)
