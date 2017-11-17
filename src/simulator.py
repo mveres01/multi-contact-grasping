@@ -75,7 +75,7 @@ def decode_grasp(header, line):
     return grasp
 
 
-def spawn_simulation(port, vrep_path, scene_path):
+def spawn_simulation(port, vrep_path, scene_path, headless_mode=True):
     """Spawns a child process using screen and starts a remote VREP server."""
 
     using_linux = platform in ['linux', 'linux2']
@@ -89,8 +89,10 @@ def spawn_simulation(port, vrep_path, scene_path):
         vrep_path = '"%s"' % vrep_path
 
     # Command to launch VREP
-    vrep_cmd = '%s -q -s -gREMOTEAPISERVERSERVICE_%d_FALSE_TRUE %s' % \
-        (vrep_path, port, scene_path)
+    headless_flag = '-h' if headless_mode else ''
+
+    vrep_cmd = '%s %s -q -s -gREMOTEAPISERVERSERVICE_%d_FALSE_TRUE %s' % \
+        (vrep_path, headless_flag, port, scene_path)
 
     # If we're using linux, we'll spawn a screen and launch a sim from there.
     # This is useful when collecting data for a long time
@@ -124,7 +126,8 @@ class SimulatorInterface(object):
     Here we'll mostly take advantage of mode (2).
     """
 
-    def __init__(self, port, ip='127.0.0.1', vrep_path=None, scene_path=None):
+    def __init__(self, port, ip='127.0.0.1', vrep_path=None, scene_path=None,
+                 headless_mode=True):
 
         if not isinstance(port, int):
             raise Exception('Port <%s> must be of type <int>' % port)
@@ -143,7 +146,7 @@ class SimulatorInterface(object):
                 raise Exception('Scene <%s> not found' % scene_path)
 
             print('Spawning a Continuous Server on port <%d>' % port)
-            spawn_simulation(port, vrep_path, scene_path)
+            spawn_simulation(port, vrep_path, scene_path, headless_mode)
 
             # Try starting communication again
             clientID = self._start_communication(ip, port)

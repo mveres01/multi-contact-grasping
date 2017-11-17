@@ -230,7 +230,7 @@ if __name__ == '__main__':
 
     # Sample way for calling VREP on windows:
     # vrep_path = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'
-    # sim = SI.SimulatorInterface(port=19997, vrep_path=vrep_path)
+    # sim = SI.SimulatorInterface(port=19997, vrep_path=vrep_path, headless_mode=True)
 
     sim = SI.SimulatorInterface(port=19997)
 
