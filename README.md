@@ -5,34 +5,10 @@ This project implements a simulated grasp-and-lift process in V-REP using the Ba
 This is an extension of [a previous project](https://github.com/mveres01/grasping), which largely simplifies the collection process, and introduces domain randomization into the image collection scheme.
 
 <p align="center">
-  <img src="./docs/sim_overview.JPG" width="400"/>
+  <img src="./docs/sim_overview.JPG" width="500"/>
 </p>
 
 __Sample Data__: To come
-
-## Recorded Information
-
-For both pre- and post-grasp, the following information is recorded:
-
-| Simulation Property | What's Recorded|
-| ----------------- | ------------------------------- |
-| Reference frames | palm, world, workspace, object |
-| Object properties | mass, center of mass, inertia |
-| Joint angles | All joints of Barrett Hand |
-| Contacts | positions, forces, and normals |
-| Images | RGB, depth, and a binary object mask |
-
-Image randomization is done according to the following properties:
-
-| Render Property | What's Affected |
-| ----------------- | ------------------------------- |
-| Lighting | Number of lights, relative position |
-| Colour | Random RGB for object and workspace |
-| Colour Components | Ambient diffuse, specular, emission, auxiliary |
-| Texture Mapping | Plane, sphere, cylinder, cube |
-| Texture Pose | Position, Orientation |
-| Camera | Pose (Resolution, Field of View, near/far planes also supported) |
-
 
 # Installation
 
@@ -46,9 +22,7 @@ Install the trimesh library:
 pip install trimesh>=2.20.21
 ```
 
-Add the remote API interfaces: 
-
-Copy the following files to _lib/_:
+Add the remote API interfaces by copying the following files to _lib/_:
 * __vrep.py__ and __vrepConst.py__ from 
 _path/to/vrep/V-REP_PRO_EDU/programming/remoteApiBindings/python/python/_ 
 * __remoteApi__ from: path/to/vrep/V-REP_PRO_EDU/programming/remoteApiBindings/lib/lib/64Bit/
@@ -65,7 +39,15 @@ python collect_grasps.py
 
 This will look in the folder _data/meshes_, and run the first mesh it finds. You should see a mesh being imported into the scene, falling onto the table, then after a short delay a gripper should begin to attempt grasping it. When the gripper closes, it will check whether all the fingertips of the Barrett Hand are in contact with the object - if so, it will attempt to lift the object to a position above the table. Successful grasps (where the object remains in the grippers palm) are recorded and saved in an hdf5 dataset for that specific object in the _output/collected_ folder.
 
-The pose of the object is kept fixed on each grasp attempt. 
+For both pre- and post-grasp, the following information is recorded:
+
+| Simulation Property | What's Recorded|
+| ----------------- | ------------------------------- |
+| Reference frames | palm, world, workspace, object |
+| Object properties | mass, center of mass, inertia |
+| Joint angles | All joints of Barrett Hand |
+| Contacts | positions, forces, and normals |
+| Images | RGB, depth, and a binary object mask |
 
 Once grasping experiments have concluded for the object (or all objects if you're running many experiments), run 
 
@@ -85,6 +67,20 @@ python collect_images.py
 
 which will open up or connect to a running V-REP scene, and begin collecting images using data from _output/grasping.hdf5_. This script uses the state of the simulator at the time of the grasp (i.e. the object pose, gripper pose, angles, etc ...) and restores those parameters before taking an image. 
 
+
+Image randomization is done according to the following properties:
+
+| Render Property | What's Affected |
+| ----------------- | ------------------------------- |
+| Lighting | Number of lights, relative position |
+| Colour | Random RGB for object and workspace |
+| Colour Components | Ambient diffuse, specular, emission, auxiliary |
+| Texture Mapping | Plane, sphere, cylinder, cube |
+| Texture Pose | Position, Orientation |
+| Camera | Pose (Resolution, Field of View, near/far planes also supported) |
+
+Sample images of the pre-grasp:
+
 <p align="center">
   <img src="./docs/0_0_box_poisson_016.png" width="256"/>
   <img src="./docs/0_1_box_poisson_016.png" width="256"/>
@@ -92,8 +88,6 @@ which will open up or connect to a running V-REP scene, and begin collecting ima
   <img src="./docs/0_3_box_poisson_016.png" width="256"/>
   <img src="./docs/0_4_box_poisson_016.png" width="256"/>
 </p>
-
-Refer to the code to see how these are done.
 
 
 # A Few things to Note:
