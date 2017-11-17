@@ -13,27 +13,6 @@ vrep.simxFinish(-1)
 
 import simulator as SI
 
-sim = SI.SimulatorInterface(port=19999)
-
-query_params = {'rgb_near_clip': 0.01,
-                'depth_near_clip': 0.01,
-                'rgb_far_clip': 10.,
-                'depth_far_clip': 1.25,
-                'camera_fov': 70 * np.pi / 180,
-                'resolution': 256,
-                'p_light_off': 0.25,
-                'p_light_mag': 0.1,
-                'reorient_up': True,
-                'randomize_texture': True,
-                'randomize_colour': True,
-                'randomize_lighting': True,
-                'texture_path': os.path.join(project_dir, 'texture.png')}
-
-pose_params = {'local_rot': (10, 10, 10),
-               'global_rot': (50, 50, 50),
-               'base_offset': -0.4,
-               'offset_mag': 0.4}
-
 
 def load_subset(h5_file, object_keys, shuffle=True):
     """Loads a subset of an hdf5 file given top-level keys.
@@ -263,6 +242,36 @@ def create_dataset(inputs, input_props, num_views, dataset_name):
 
 
 if __name__ == '__main__':
+
+    spawn_params = {'port': 19997,
+                    'ip': '127.0.0.1',
+                    'vrep_path': None,
+                    'scene_path': None,
+                    'exit_on_stop': True,
+                    'spawn_headless': False,
+                    'spawn_new_console': True}
+
+    query_params = {'rgb_near_clip': 0.01,
+                    'depth_near_clip': 0.01,
+                    'rgb_far_clip': 10.,
+                    'depth_far_clip': 1.25,
+                    'camera_fov': 70 * np.pi / 180,
+                    'resolution': 256,
+                    'p_light_off': 0.25,
+                    'p_light_mag': 0.1,
+                    'reorient_up': True,
+                    'randomize_texture': True,
+                    'randomize_colour': True,
+                    'randomize_lighting': True,
+                    'texture_path': os.path.join(project_dir, 'texture.png')}
+
+    pose_params = {'local_rot': (10, 10, 10),
+                   'global_rot': (50, 50, 50),
+                   'base_offset': -0.4,
+                   'offset_mag': 0.4}
+
+    #spawn_params['vrep_path'] = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'
+    sim = SI.SimulatorInterface(**spawn_params)
 
     np.random.seed(1234)
     batch_views = 10

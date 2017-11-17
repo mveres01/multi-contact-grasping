@@ -228,11 +228,19 @@ if __name__ == '__main__':
     meshes = glob.glob(os.path.join(config_mesh_dir, '*'))
     meshes = [m for m in meshes if any(x in m for x in ['.stl', '.obj'])]
 
-    # Sample way for calling VREP on windows:
-    # vrep_path = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'
-    # sim = SI.SimulatorInterface(port=19997, vrep_path=vrep_path, headless_mode=True)
+    spawn_params = {'port': 19997,
+                    'ip': '127.0.0.1',
+                    'vrep_path': None,
+                    'scene_path': None,
+                    'exit_on_stop': True,
+                    'spawn_headless': False,
+                    'spawn_new_console': True}
 
-    sim = SI.SimulatorInterface(port=19997)
+    # Sample way for calling VREP on windows by specifying full path:
+    # spawn_params['vrep_path'] = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'
+
+    # Use the spawn_headless = False / True flag to view with GUI or not
+    sim = SI.SimulatorInterface(**spawn_params)
 
     for m in meshes:
         mesh_path = os.path.join(config_mesh_dir, m)
