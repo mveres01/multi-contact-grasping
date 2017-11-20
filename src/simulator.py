@@ -129,8 +129,11 @@ def spawn_simulation(port, vrep_path, scene_path, exit_on_stop,
 
     print('Using command: \n%s\nto spawn simulation' % vrep_cmd)
 
-    cflags = subprocess.CREATE_NEW_CONSOLE if spawn_new_console else 0
-    process = subprocess.Popen(vrep_cmd, shell=True, creationflags=cflags)
+    if spawn_new_console and not using_linux:
+        cflags = subprocess.CREATE_NEW_CONSOLE
+        process = subprocess.Popen(vrep_cmd, shell=True, creationflags=cflags)
+    else:    
+        process = subprocess.Popen(vrep_cmd, shell=True)
     time.sleep(1)
     return process
 
