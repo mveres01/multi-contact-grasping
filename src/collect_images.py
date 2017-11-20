@@ -197,8 +197,8 @@ def create_dataset(inputs, input_props, num_views, dataset_name):
     gr_shape = (inputs.shape[0] * num_views, inputs.shape[1])
     mx_shape = (inputs.shape[0] * num_views, 12)
 
-    image_wo_gripper = f.create_dataset('images_w_gripper', im_shape, dtype='float16')
-    image_w_gripper = f.create_dataset('images_wo_gripper', im_shape, dtype='float16')
+    image_w_gripper = f.create_dataset('images_w_gripper', im_shape, dtype='float16')
+    image_wo_gripper = f.create_dataset('images_wo_gripper', im_shape, dtype='float16')
     dset_grasp = f.create_dataset('grasps', gr_shape)
 
     group = f.create_group('props')
@@ -230,8 +230,8 @@ def create_dataset(inputs, input_props, num_views, dataset_name):
         high = (idx + 1) * num_views
 
         for i, save_i in enumerate(save_indices[low:high]):
-            image_wo_gripper[save_i] = q_images_reg[i]
             image_w_gripper[save_i] = q_images_grasp[i]
+            image_wo_gripper[save_i] = q_images_reg[i]
             dset_grasp[save_i] = q_grasps[i]
 
             for key in input_props.keys():
@@ -270,7 +270,7 @@ if __name__ == '__main__':
                    'base_offset': -0.4,
                    'offset_mag': 0.4}
 
-    #spawn_params['vrep_path'] = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'
+    # spawn_params['vrep_path'] = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'
     sim = SI.SimulatorInterface(**spawn_params)
 
     np.random.seed(1234)
