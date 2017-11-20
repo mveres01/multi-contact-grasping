@@ -75,32 +75,62 @@ def decode_grasp(header, line):
     return grasp
 
 
-def spawn_simulation(port, vrep_path, scene_path, headless_mode=True):
-    """Spawns a child process using screen and starts a remote VREP server."""
+def spawn_simulation(port, vrep_path, scene_path, exit_on_stop,
+                     spawn_headless, spawn_new_console):
+    """Spawns a child process using screen and starts a remote VREP server.
+
+    Parameters
+    ----------
+    port : int
+        integer denoting which port to connect to
+
+    vrep_path : a path to the V-REP executable or None.
+        If None, attempt to use either an "vrep.exe" (windows) or "vrep.sh"
+        (linux) and check that it can be found in PATH.
+
+    scene_path : string
+        The path to the scene we wish to load in the simulator
+
+    exit_on_stop : bool
+        Whether we want V-REP to exit when the simulation is stopped or not
+
+    spawn_headless : bool
+        Whether we want to run vrep using the GUI (True) or without (False)
+
+    spawn_new_console : bool
+        Whether we want output from the sim to be on current command line, or
+        on a new console. If spawn_headless is True, this flag has no effect.
+    """
 
     using_linux = platform in ['linux', 'linux2']
 
-    if vrep_path is None:
-        vrep_path = 'vrep.sh' if using_linux else '"vrep.exe"'
+    # E.g. full path to V-REP executable is specified
+    if vrep_path is not None:
+        if not os.path.exists(vrep_path):
+            raise Exception('Cannot find file <%s>' % vrep_path)
+        elif not using_linux:
+            vrep_path = '"%s"' % vrep_path
+    else:
+        vrep_path = 'vrep.sh' if using_linux else 'vrep.exe'
 
-    if find_executable(vrep_path) is None and not os.path.exists(vrep_path):
-        raise Exception('Cannot find %s in PATH to spawn a sim.' % vrep_path)
-    if platform not in ['linux', 'linux2']:
-        vrep_path = '"%s"' % vrep_path
+        if find_executable(vrep_path) is None:
+            raise Exception('Cannot find %s in PATH to spawn a sim. '
+                            'Try specifying full path to executable. ' % vrep_path)
 
     # Command to launch VREP
-    headless_flag = '-h' if headless_mode else ''
+    headless_flag = '-h' if spawn_headless else ''
+    exit_flag = '-q' if exit_on_stop else ''
 
-    vrep_cmd = '%s %s -q -s -gREMOTEAPISERVERSERVICE_%d_FALSE_TRUE %s' % \
-        (vrep_path, headless_flag, port, scene_path)
+    vrep_cmd = '%s %s %s -s -gREMOTEAPISERVERSERVICE_%d_FALSE_FALSE %s' % \
+        (vrep_path, headless_flag, exit_flag, port, scene_path)
 
-    # If we're using linux, we'll spawn a screen and launch a sim from there.
-    # This is useful when collecting data for a long time
     if platform in ['linux', 'linux2']:
-        vrep_cmd = 'screen -dmS port%d bash -c "export DISPLAY=:1 ;'\
-            'ulimit -n 4096; %s " ' % (port, vrep_cmd)
+        vrep_cmd = 'bash -c "export DISPLAY=:1 ; %s " ' % (vrep_cmd)
 
-    process = subprocess.Popen(vrep_cmd, shell=True)
+    print('Using command: \n%s\nto spawn simulation' % vrep_cmd)
+
+    cflags = subprocess.CREATE_NEW_CONSOLE if spawn_new_console else 0
+    process = subprocess.Popen(vrep_cmd, shell=True, creationflags=cflags)
     time.sleep(1)
     return process
 
@@ -127,7 +157,7 @@ class SimulatorInterface(object):
     """
 
     def __init__(self, port, ip='127.0.0.1', vrep_path=None, scene_path=None,
-                 headless_mode=True):
+                 exit_on_stop=True, spawn_headless=True, spawn_new_console=True):
 
         if not isinstance(port, int):
             raise Exception('Port <%s> must be of type <int>' % port)
@@ -146,7 +176,8 @@ class SimulatorInterface(object):
                 raise Exception('Scene <%s> not found' % scene_path)
 
             print('Spawning a Continuous Server on port <%d>' % port)
-            spawn_simulation(port, vrep_path, scene_path, headless_mode)
+            spawn_simulation(port, vrep_path, scene_path, exit_on_stop,
+                             spawn_headless, spawn_new_console)
 
             # Try starting communication again
             clientID = self._start_communication(ip, port)
@@ -199,10 +230,9 @@ class SimulatorInterface(object):
                             'running and try connecting again.')
 
         r = vrep.simxStartSimulation(self.clientID, vrep.simx_opmode_blocking)
-        print 'r: ', r, 'clientID: ', self.clientID
 
         if r != vrep.simx_return_ok:
-            raise Exception('Unable to start simulation.')
+            raise Exception('Unable to start simulation. Return code ', r)
         vrep.simxSynchronous(self.clientID, False)
 
     @staticmethod
@@ -284,7 +314,7 @@ class SimulatorInterface(object):
                                         vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting gripper pose!')
+            raise Exception('Error setting gripper pose! Return code ', r)
 
     def get_pose_by_name(self, name):
         """Queries the simulator for the pose of object corresponding to <name>.
@@ -298,7 +328,8 @@ class SimulatorInterface(object):
                                         bytearray(), vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            raise Exception('Error getting pose for <%s>!' % name)
+            raise Exception('Error getting pose for <%s>!' % name,
+                            'Return code ', r)
         return lib.utils.format_htmatrix(r[2])
 
     def set_pose_by_name(self, name, frame_work2pose):
@@ -312,7 +343,8 @@ class SimulatorInterface(object):
                                         bytearray(), vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting pose for name <%s>!' % name)
+            raise Exception('Error setting pose for name <%s>!' % name,
+                            'Return code ', r)
 
     def get_joint_position_by_name(self, name):
         """Given a name of a joint, get the current position"""
@@ -324,7 +356,8 @@ class SimulatorInterface(object):
                                         vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting joint position for <%s>!' % name)
+            raise Exception('Error setting joint position for <%s>!' % name,
+                            'Return code ', r)
         return r[2][0]
 
     def set_joint_position_by_name(self, name, position):
@@ -337,7 +370,8 @@ class SimulatorInterface(object):
                                         vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting joint position for <%s>!' % name)
+            raise Exception('Error setting joint position for <%s>!' % name,
+                            'Return code ', r)
 
     def set_gripper_kinematics_mode(self, mode='forward'):
 
@@ -352,7 +386,8 @@ class SimulatorInterface(object):
                                         vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting gripper kinematics mode.')
+            raise Exception('Error setting gripper kinematics mode.',
+                            'Return code ', r)
 
     def set_gripper_properties(self, collidable=False, measureable=False,
                                renderable=False, detectable=False,
@@ -377,7 +412,7 @@ class SimulatorInterface(object):
                                         bytearray(), vrep.simx_opmode_blocking)
 
         if r[0] != vrep.simx_return_ok:
-            raise Exception('Error setting gripper properties.')
+            raise Exception('Error setting gripper properties. Return code ', r)
 
     def query(self, frame_work2cam, frame_world2work=None,
               resolution=128, rgb_near_clip=0.2, rgb_far_clip=10.0,
@@ -478,7 +513,7 @@ class SimulatorInterface(object):
                 self.clientID, 'object_resting', vrep.simx_opmode_oneshot_wait)
 
         if success == 0:
-            raise Exception('Error dropping object!')
+            raise Exception('Error dropping object! Return code: ', r)
 
     def run_threaded_candidate(self, finger_angle=0):
         """Launches a threaded scrip in simulator that tests a grasp candidate.

@@ -28,6 +28,19 @@ def load_mesh(mesh_path):
     return mesh
 
 
+def plot_grasp(mesh_path, pre_or_post_grasp):
+    """Plots the contact positions of a grasp & object."""
+
+    frame_work2obj = pre_or_post_grasp['frame_work2obj']
+    frame_work2obj = lib.utils.format_htmatrix(frame_work2obj)
+
+    axis = lib.utils.plot_mesh(mesh_path, frame_work2obj, axis=None)
+    axis.scatter(*pre_or_post_grasp['work2contact0'], c='r', marker='o', s=75)
+    axis.scatter(*pre_or_post_grasp['work2contact1'], c='g', marker='o', s=75)
+    axis.scatter(*pre_or_post_grasp['work2contact2'], c='b', marker='o', s=75)
+    return axis
+
+
 def plot_mesh_with_normals(mesh, matrices, direction_vec, axis=None):
     """Visualize where we will sample grasp candidates from
 
@@ -125,7 +138,8 @@ def collect_grasps(mesh_path, sim,
                    num_random_per_candidate=5,
                    candidate_offset=-0.07,
                    candidate_offset_mag=0.03,
-                   candidate_local_rot=(10, 10, 359)):
+                   candidate_local_rot=(10, 10, 359),
+                   show_pregrasp_pose=False):
 
     if not os.path.exists(config_output_collected_dir):
         os.makedirs(config_output_collected_dir)
@@ -200,6 +214,12 @@ def collect_grasps(mesh_path, sim,
             if success is False:  # Only save successful grasps
                 continue
 
+            # Example of how to show where the fingers were contacting the
+            # object using either pregrasp or postgrasp pose
+            if show_pregrasp_pose:
+                plot_grasp(mesh_path, pregrasp)
+                plt.show()
+
             # Create initial structures if dataset is currently empty, then
             # save grasp attempt
             if len(pregrasp_group) == 0:
@@ -228,11 +248,19 @@ if __name__ == '__main__':
     meshes = glob.glob(os.path.join(config_mesh_dir, '*'))
     meshes = [m for m in meshes if any(x in m for x in ['.stl', '.obj'])]
 
-    # Sample way for calling VREP on windows:
-    # vrep_path = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'
-    # sim = SI.SimulatorInterface(port=19997, vrep_path=vrep_path, headless_mode=True)
+    spawn_params = {'port': 19997,
+                    'ip': '127.0.0.1',
+                    'vrep_path': None,
+                    'scene_path': None,
+                    'exit_on_stop': True,
+                    'spawn_headless': True,
+                    'spawn_new_console': True}
 
-    sim = SI.SimulatorInterface(port=19997)
+    # Sample way for calling VREP on windows by specifying full path:
+    # spawn_params['vrep_path'] = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'
+
+    # Use the spawn_headless = False / True flag to view with GUI or not
+    sim = SI.SimulatorInterface(**spawn_params)
 
     for m in meshes:
         mesh_path = os.path.join(config_mesh_dir, m)

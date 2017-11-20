@@ -186,7 +186,10 @@ function getGraspInformation(all_in_contact, contactsInfo, object_tree,
     end
 
     -- Save the forces, torques, and normals of the contact points
+    -- Contact points are recorded WRT world frame, but for our purpose
+    -- we'll re-encode to the workspace frame
     local world2work = simGetObjectMatrix(h_workspace, -1)
+    local r = simInvertMatrix(world2work)
     for i = 1, #contactsInfo, 1 do
 
         -- Convert contact information from world to workspace frame
