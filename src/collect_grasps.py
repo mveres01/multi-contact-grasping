@@ -241,6 +241,8 @@ def collect_grasps(mesh_path, sim,
 
             num_successful += 1
 
+            break
+
     datafile.close()
     print('Finished Collecting!')
 
@@ -280,5 +282,6 @@ if __name__ == '__main__':
 
         mesh_list_file = sys.argv[2]
         with open(mesh_list_file, 'r') as f:
-            mesh_path = f.readline().rstrip()
-            collect_grasps(mesh_path, sim, num_candidates=1000)
+            while True:
+                mesh_path = f.readline().rstrip()
+                collect_grasps(mesh_path, sim, num_candidates=1000)
