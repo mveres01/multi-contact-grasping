@@ -3,74 +3,35 @@ import sys
 import glob
 import h5py
 import numpy as np
+from PIL import Image
+from scipy import misc
 
 sys.path.append('..')
 import lib
-from lib.config import (config_output_dir, config_output_dataset_path,
+from lib.config import (config_output_collected_dir,
+                        config_output_processed_dir,
                         config_mesh_dir, project_dir)
 from lib import vrep
-vrep.simxFinish(-1)
-
+from postprocess import postprocess
 import simulator as SI
 
+vrep.simxFinish(-1)
 
-def load_subset(h5_file, object_keys, shuffle=True):
-    """Loads a subset of an hdf5 file given top-level keys.
+def save_images(images, images_gripper, postfix, save_dir):
+    """Saves the queried images to disk."""
 
-    The hdf5 file was created using object names as the top-level keys.
-    Loading a subset of this file means loading data corresponding to
-    specific objects.
-    """
+    name = os.path.join(save_dir, postfix + '_rgb.jpg')
+    misc.imsave(name, np.uint8(images[0, :3].transpose(1, 2, 0) * 255))
 
-    if not isinstance(object_keys, list):
-        object_keys = [object_keys]
+    # To write the depth info, we'll save it as a 16bit float via numpy
+    name = os.path.join(save_dir, postfix + '_depth')
+    np.save(name, np.float16(images[0, 3]), False, True)
 
-    # Load the grasp properties.
-    props = {'object_name': []}
+    name = os.path.join(save_dir, postfix + '_mask.jpg')
+    misc.imsave(name, np.uint8(images[0, 4] * 255))
 
-    for obj in object_keys:
-
-        data = h5_file[obj]['pregrasp']
-
-        # Since there are multiple properties per grasp, we'll do something
-        # ugly and store intermediate results into a list, and merge all the
-        # properties after we've looped through all the objects.
-        for p in data.keys():
-            if p not in props:
-                props[p] = []
-            props[p].append(np.vstack(data[p][:]))
-
-        name = np.atleast_2d([obj])
-        name = np.repeat(name, len(data['frame_work2palm']), axis=0)
-        props['object_name'].append(name)
-
-    grasps = np.vstack(props['grasp'])
-    del props['grasp']
-
-    # Merge the list-of-lists for each property into single arrays
-    idx = np.arange(grasps.shape[0])
-    if shuffle is True:
-        np.random.shuffle(idx)
-
-    grasps = grasps[idx]
-    for key in props.keys():
-        props[key] = np.vstack(props[key])[idx]
-    return grasps, props
-
-
-def plot_queried_images(image1, image2, postfix_name):
-    """Plots an image of [object, grasp on object] pairs."""
-
-    from scipy import misc
-    _, channels, num_rows, num_cols = image1.shape
-    fig = np.zeros((num_rows, num_cols * 2, 3))
-    fig[:, :num_cols] = image1[0, :3].transpose(1, 2, 0)
-    fig[:, num_cols:] = image2[0, :3].transpose(1, 2, 0)
-
-    save_dir = os.path.join(config_output_dir, 'grasp_images')
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-    misc.imsave(os.path.join(save_dir, postfix_name), fig)
+    name = os.path.join(save_dir, postfix + '_gripper.jpg')
+    misc.imsave(name, np.uint8(images_gripper[0, :3].transpose(1, 2, 0) * 255))
 
 
 def is_valid_image(mask, num_pixel_thresh=400):
@@ -92,8 +53,12 @@ def is_valid_image(mask, num_pixel_thresh=400):
     return len(where_object) >= num_pixel_thresh
 
 
-def get_minibatch(grasps, props, index, num_views, save_queried_images=True):
+def query_minibatch(pregrasp, index, num_views, object_name):
     """Queries simulator for an image and formats grasp to be WRT camera."""
+
+    save_dir = os.path.join(config_output_processed_dir, object_name)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
 
     # Used to take a duplicate image of the current scene
     q_non_random = query_params.copy()
@@ -103,35 +68,43 @@ def get_minibatch(grasps, props, index, num_views, save_queried_images=True):
     q_non_random['reorient_up'] = False
 
     # These properties don't matter too much since we're not going to be
-    # dynamically simulating the object
-    mass = props['mass_wrt_world'][index]
-    com = props['com_wrt_world'][index]
-    inertia = props['inertia_wrt_world'][index]
+    # dynamically simulating the object, but are needed as placeholders for
+    # loading the object
+    mass = pregrasp['mass_wrt_world'][index]
+    com = pregrasp['com_wrt_world'][index]
+    inertia = pregrasp['inertia_wrt_world'][index]
 
-    frame_world2work = props['frame_world2work'][index]
-    frame_work2obj = props['frame_work2obj'][index]
-    frame_work2palm = props['frame_work2palm'][index]
+    grasp = np.hstack([pregrasp['work2contact0'][index],
+                       pregrasp['work2contact1'][index],
+                       pregrasp['work2contact2'][index],
+                       pregrasp['work2normal0'][index],
+                       pregrasp['work2normal1'][index],
+                       pregrasp['work2normal2'][index]])
+
+    frame_world2work = pregrasp['frame_world2work'][index]
+    frame_work2palm = pregrasp['frame_work2palm'][index]
     frame_work2palm = lib.utils.format_htmatrix(frame_work2palm)
 
     # TODO: A little hacky. Try to clean this up so the full path is specified,
     # or object with full extension is given in dataset.
-    base_path = os.path.join(config_mesh_dir, props['object_name'][index, 0])
+    base_path = os.path.join(config_mesh_dir, object_name)
     object_path = str(glob.glob(base_path + '*')[0])
 
     sim.load_object(object_path, com, mass, inertia)
 
-    sim.set_object_pose(frame_work2obj)
+    sim.set_object_pose(pregrasp['frame_work2obj'][index])
 
     # Collect images of the object by itself, and the pre-grasp that was used.
     # Set gripper pose & toggle between being visible / invisible across views
-    sim.set_gripper_pose(frame_work2palm)
-    for key in props.keys():
+    sim.set_gripper_pose(pregrasp['frame_work2palm'][index])
+    for key in pregrasp.keys():
         if 'joint' not in key:
             continue
-        pos = float(props[key][index, 0])
+        pos = float(pregrasp[key][index, 0])
         sim.set_joint_position_by_name(str(key), pos)
 
-    sim_images_reg, sim_images_grasp, sim_grasps, sim_work2cam = [], [], [], []
+
+    grasp_list, frame_work2cam_list, name_list = [], [], []
 
     # For each successful grasp, we'll do a few randomizations of camera / obj
     for count in xrange(num_views):
@@ -157,98 +130,113 @@ def get_minibatch(grasps, props, index, num_views, save_queried_images=True):
 
             if image_wo_gripper is None:
                 raise Exception('No image returned.')
-            elif not is_valid_image(image_wo_gripper[0, 4], num_pixel_thresh=600):
-                continue
+            elif is_valid_image(image_wo_gripper[0, 4], num_pixel_thresh=600):
+                break
 
-            # Take an image of the grasp that was used on the object
-            sim.set_gripper_properties(visible=True, renderable=True)
+        # Take an image of the grasp that was used on the object
+        sim.set_gripper_properties(visible=True, renderable=True)
 
-            image_w_gripper, _ = sim.query(frame_work2cam_ht[:3].flatten(),
-                                           frame_world2work, **q_non_random)
+        image_w_gripper, _ = sim.query(frame_work2cam_ht[:3].flatten(),
+                                       frame_world2work, **q_non_random)
 
-            frame_cam2work_ht = lib.utils.invert_htmatrix(frame_work2cam_ht)
-            grasp = lib.utils.convert_grasp_frame(frame_cam2work_ht, grasps[index])
+        postfix = '%d_%d' % (index, count)
+        save_images(image_wo_gripper, image_w_gripper, postfix, save_dir)
 
-            sim_grasps.append(np.float32(grasp))
-            sim_images_reg.append(np.float16(image_wo_gripper))
-            sim_images_grasp.append(np.float16(image_w_gripper))
-            sim_work2cam.append(np.float32(frame_work2cam_ht[:3].flatten()))
+        # Conver the grasp contacts / normals from workspace to camera frame
+        frame_cam2work_ht = lib.utils.invert_htmatrix(frame_work2cam_ht)
+        grasp_wrt_cam = lib.utils.convert_grasp_frame(frame_cam2work_ht, grasp)
 
-            if save_queried_images:
-                name = str(props['object_name'][index, 0])
-                name = '%d_%d_%s.png' % (index, count, name)
-                plot_queried_images(image_wo_gripper, image_w_gripper, name)
+        name_list.append(postfix)
+        grasp_list.append(np.float32(grasp_wrt_cam))
+        frame_work2cam_list.append(np.float32(frame_work2cam_ht[:3].flatten()))
 
-            break
-
-    return (np.vstack(sim_images_reg), np.vstack(sim_images_grasp),
-            np.vstack(sim_grasps), np.vstack(sim_work2cam))
+    return (np.vstack(grasp_list), np.vstack(frame_work2cam_list),
+            np.hstack(name_list))
 
 
-def create_dataset(inputs, input_props, num_views, dataset_name):
-    """Collects images from sim & creates dataset for doing ML."""
+def collect_images(file_name, input_dir, output_dir, num_views):
+    """Collects images from sim."""
 
-    f = h5py.File(dataset_name, 'w')
 
-    # Initialize some structures for holding the dataset
-    res = query_params['resolution']
 
-    im_shape = (inputs.shape[0] * num_views, 5, res, res)
-    gr_shape = (inputs.shape[0] * num_views, inputs.shape[1])
-    mx_shape = (inputs.shape[0] * num_views, 12)
+    f = h5py.File('/scratch/mveres/grasping-random-pose/output/grasping.hdf5', 'r')
+    if file_name not in f:
+        return
+    pregrasp = f[file_name]['pregrasp']
+    postgrasp = f[file_name]['postgrasp']
+    file_name = file_name + '.hdf5'
 
-    image_w_gripper = f.create_dataset('images_w_gripper', im_shape, dtype='float16')
-    image_wo_gripper = f.create_dataset('images_wo_gripper', im_shape, dtype='float16')
-    dset_grasp = f.create_dataset('grasps', gr_shape)
 
-    group = f.create_group('props')
-    for key in input_props.keys():
-        num_var = input_props[key].shape[1]
+
+
+
+    # f = h5py.File(os.path.join(input_dir, file_name), 'r')
+    # pregrasp, postgrasp = postprocess(f['pregrasp'], f['postgrasp'])
+
+    if pregrasp is None or postgrasp is None:
+        print('No data in %s' % file_name)
+    num_samples = len(pregrasp[pregrasp.keys()[0]])
+
+
+    out_file = h5py.File(os.path.join(output_dir, file_name), 'w')
+
+    pregrasp_group = out_file.create_group('pregrasp')
+    postgrasp_group = out_file.create_group('postgrasp')
+
+    dt = h5py.special_dtype(vlen=unicode)
+
+    for key in pregrasp.keys():
+        num_var = pregrasp[key].shape[1]
         if key == 'object_name':
-            dt = h5py.special_dtype(vlen=unicode)
-            group.create_dataset(key, (inputs.shape[0] * num_views, 1), dtype=dt)
+            pregrasp_group.create_dataset(key, (num_samples * num_views, 1), dtype=dt)
+            postgrasp_group.create_dataset(key, (num_samples * num_views, 1), dtype=dt)
         else:
-            group.create_dataset(key, (inputs.shape[0] * num_views, num_var))
-    group.create_dataset('frame_work2cam', mx_shape)
+            pregrasp_group.create_dataset(key, (num_samples * num_views, num_var))
+            postgrasp_group.create_dataset(key, (num_samples * num_views, num_var))
 
-    # Loop through our collected data, and query the sim for an image and
-    # grasp transformed to the camera's frame
-    save_indices = np.arange(len(inputs) * num_views)
-    np.random.shuffle(save_indices)
+    # Collecting this from the sim
+    pregrasp_group.create_dataset('grasp_wrt_cam', (num_samples * num_views, 18))
+    pregrasp_group.create_dataset('image_name', (num_samples * num_views, ), dtype=dt)
+    pregrasp_group.create_dataset('frame_work2cam', (num_samples * num_views, 12))
 
-    for idx in range(0, len(inputs)):
 
-        print idx, ' / ', len(inputs)
+    # Start collection
+    for i in xrange(num_samples):
 
-        # Query simulator for data
-        q_images_reg, q_images_grasp, q_grasps, q_work2cam = \
-            get_minibatch(inputs, input_props, idx, num_views)
+        print('Querying for image set %d / %d ' % (i, num_samples))
 
-        # We save the queried information in a "shuffled" manner, so grasps
-        # for the same object are spread throughout the dataset
-        low = idx * num_views
-        high = (idx + 1) * num_views
+        low = i * num_views
+        high = (i + 1) * num_views
 
-        for i, save_i in enumerate(save_indices[low:high]):
-            image_w_gripper[save_i] = q_images_grasp[i]
-            image_wo_gripper[save_i] = q_images_reg[i]
-            dset_grasp[save_i] = q_grasps[i]
+        for key in pregrasp.keys():
+            pregrasp_group[key][low:high] = np.repeat(pregrasp[key][i:i+1],
+                                                      num_views, axis=0)
+            postgrasp_group[key][low:high] = np.repeat(postgrasp[key][i:i+1],
+                                                       num_views, axis=0)
 
-            for key in input_props.keys():
-                group[key][save_i] = input_props[key][idx]
-            group['frame_work2cam'][save_i] = q_work2cam[i]
+        # Query the simulator for some images; note that we're only collecting
+        # this info for the pregrasp here.
+        grasp_wrt_cam, frame_work2cam, image_names = \
+            query_minibatch(pregrasp, i, num_views, file_name.split('.')[0])
+
+        pregrasp_group['grasp_wrt_cam'][low:high] = grasp_wrt_cam
+        pregrasp_group['image_name'][low:high] = image_names
+        pregrasp_group['frame_work2cam'][low:high] = frame_work2cam
+
 
     f.close()
 
 
 if __name__ == '__main__':
 
+    num_views_per_sample = 10
+
     spawn_params = {'port': 19997,
                     'ip': '127.0.0.1',
                     'vrep_path': None,
                     'scene_path': None,
                     'exit_on_stop': True,
-                    'spawn_headless': False,
+                    'spawn_headless': True,
                     'spawn_new_console': True}
 
     query_params = {'rgb_near_clip': 0.01,
@@ -271,16 +259,24 @@ if __name__ == '__main__':
                    'offset_mag': 0.4}
 
     # spawn_params['vrep_path'] = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'
-    sim = SI.SimulatorInterface(**spawn_params)
 
-    np.random.seed(1234)
-    batch_views = 10
-    max_samples = 50
-    max_valid_samples = 10
-    n_test_objects = 2
-    shuffle_data = False
+    if len(sys.argv) == 1:
+        sim = SI.SimulatorInterface(**spawn_params)
 
-    f = h5py.File(config_output_dataset_path, 'r')
+        np.random.seed(1234)
 
-    grasps, props = load_subset(f, f.keys(), shuffle_data)
-    create_dataset(grasps, props, batch_views, 'dataset.hdf5')
+        data_list = os.listdir(config_output_collected_dir)
+        data_list = [d for d in data_list if '.hdf5' in d]
+
+        for h5file in data_list:
+            collect_images(h5file, config_output_collected_dir,
+                           config_output_processed_dir, num_views_per_sample)
+
+    else:
+        spawn_params['port'] = int(sys.argv[1])
+        mesh_name = sys.argv[2].split(os.path.sep)[-1].split('.')[0]
+
+        sim = SI.SimulatorInterface(**spawn_params)
+
+        collect_images(mesh_name, config_output_collected_dir,
+                       config_output_processed_dir, num_views_per_sample)

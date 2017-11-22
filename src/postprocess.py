@@ -9,7 +9,7 @@ sys.path.append('..')
 from lib.utils import (format_htmatrix, invert_htmatrix,
                        get_unique_idx, convert_grasp_frame)
 from lib.config import (config_output_collected_dir,
-                        config_output_dataset_path)
+                        config_output_processed_dir)
 
 
 def get_outlier_mask(data_in, sigma=3):
@@ -85,64 +85,3 @@ def postprocess(h5_pregrasp, h5_postgrasp):
     assert all(pregrasp_size == pregrasp[k].shape[0] for k in keys)
     assert all(postgrasp_size == postgrasp[k].shape[0] for k in keys)
     return pregrasp, postgrasp
-
-
-def merge_datasets(data_dir, save_path=config_output_dataset_path):
-    """Given a directory, load a set of hdf5 files given as a list."""
-
-    data_list = glob.glob(os.path.join(data_dir, '*.hdf5'))
-
-    # Write each of the train/test/valid splits to file
-    savefile = h5py.File(save_path, 'w')
-
-    # For each of the decoded objects in the data_dir
-    for fname in data_list:
-
-        object_name = fname.split(os.path.sep)[-1].split('.')[0]
-
-        # If trying to open a file that wasn't closed properly
-        try:
-            input_file = h5py.File(fname, 'r')
-        except Exception:
-            continue
-        pregrasp, postgrasp = postprocess(input_file['pregrasp'],
-                                          input_file['postgrasp'])
-
-        if pregrasp is None or postgrasp is None:
-            print '%s no data returned!' % fname
-            continue
-        elif pregrasp['frame_work2palm'].shape[0] < 1:
-            continue
-
-        group = savefile.create_group(object_name)
-        pregrasp_group = group.create_group('pregrasp')
-
-        pregrasp_data = np.hstack([pregrasp['work2contact0'][:],
-                                   pregrasp['work2contact1'][:],
-                                   pregrasp['work2contact2'][:],
-                                   pregrasp['work2normal0'][:],
-                                   pregrasp['work2normal1'][:],
-                                   pregrasp['work2normal2'][:]])
-
-        pregrasp_group.create_dataset('grasp', data=pregrasp_data, compression='gzip')
-        for key in pregrasp.keys():
-            pregrasp_group.create_dataset(key, data=pregrasp[key], compression='gzip')
-
-        postgrasp_group = group.create_group('postgrasp')
-
-        postgrasp_data = np.hstack([postgrasp['work2contact0'][:],
-                                    postgrasp['work2contact1'][:],
-                                    postgrasp['work2contact2'][:],
-                                    postgrasp['work2normal0'][:],
-                                    postgrasp['work2normal1'][:],
-                                    postgrasp['work2normal2'][:]])
-
-        postgrasp_group.create_dataset('grasp', data=postgrasp_data, compression='gzip')
-        for key in postgrasp.keys():
-            postgrasp_group.create_dataset(key, data=postgrasp[key], compression='gzip')
-
-    savefile.close()
-
-
-if __name__ == '__main__':
-    merge_datasets(config_output_collected_dir, config_output_dataset_path)

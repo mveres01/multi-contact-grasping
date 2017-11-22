@@ -13,6 +13,8 @@ sys.path.append('..')
 import lib
 import lib.utils
 from lib.config import config_mesh_dir, config_output_collected_dir
+from lib import vrep
+vrep.simxFinish(-1)
 import simulator as SI
 
 
@@ -245,9 +247,8 @@ def collect_grasps(mesh_path, sim,
 
 if __name__ == '__main__':
 
-    meshes = glob.glob(os.path.join(config_mesh_dir, '*'))
-    meshes = [m for m in meshes if any(x in m for x in ['.stl', '.obj'])]
-
+  
+    # Use the spawn_headless = False / True flag to view with GUI or not
     spawn_params = {'port': 19997,
                     'ip': '127.0.0.1',
                     'vrep_path': None,
@@ -256,13 +257,28 @@ if __name__ == '__main__':
                     'spawn_headless': True,
                     'spawn_new_console': True}
 
+    
     # Sample way for calling VREP on windows by specifying full path:
     # spawn_params['vrep_path'] = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'
 
-    # Use the spawn_headless = False / True flag to view with GUI or not
-    sim = SI.SimulatorInterface(**spawn_params)
+    if len(sys.argv) == 1:
 
-    for m in meshes:
-        mesh_path = os.path.join(config_mesh_dir, m)
-        print('mesh_path: ', mesh_path)
-        collect_grasps(mesh_path, sim)
+        meshes = glob.glob(os.path.join(config_mesh_dir, '*'))
+        meshes = [m for m in meshes if any(x in m for x in ['.stl', '.obj'])]
+
+        sim = SI.SimulatorInterface(**spawn_params)
+
+        for m in meshes:
+            mesh_path = os.path.join(config_mesh_dir, m)
+            print('mesh_path: ', mesh_path)
+            collect_grasps(mesh_path, sim)
+
+    else:
+        spawn_params['port'] = int(sys.argv[1])
+
+        sim = SI.SimulatorInterface(**spawn_params)
+
+        mesh_list_file = sys.argv[2]
+        with open(mesh_list_file, 'r') as f:
+            mesh_path = f.readline().rstrip()
+            collect_grasps(mesh_path, sim, num_candidates=1000)
