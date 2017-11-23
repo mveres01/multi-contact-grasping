@@ -157,24 +157,15 @@ def query_minibatch(pregrasp, index, num_views, object_name):
 def collect_images(file_name, input_dir, output_dir, num_views):
     """Collects images from sim."""
 
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-
-    f = h5py.File('/scratch/mveres/grasping-random-pose/output/grasping.hdf5', 'r')
-    if file_name not in f:
-        return
-    pregrasp = f[file_name]['pregrasp']
-    postgrasp = f[file_name]['postgrasp']
-    file_name = file_name + '.hdf5'
-
-
-
-
-
-    # f = h5py.File(os.path.join(input_dir, file_name), 'r')
-    # pregrasp, postgrasp = postprocess(f['pregrasp'], f['postgrasp'])
+    f = h5py.File(os.path.join(input_dir, file_name), 'r')
+    pregrasp, postgrasp = postprocess(f['pregrasp'], f['postgrasp'])
 
     if pregrasp is None or postgrasp is None:
         print('No data in %s' % file_name)
+        return
     num_samples = len(pregrasp[pregrasp.keys()[0]])
 
 
@@ -184,15 +175,10 @@ def collect_images(file_name, input_dir, output_dir, num_views):
     postgrasp_group = out_file.create_group('postgrasp')
 
     dt = h5py.special_dtype(vlen=unicode)
-
     for key in pregrasp.keys():
         num_var = pregrasp[key].shape[1]
-        if key == 'object_name':
-            pregrasp_group.create_dataset(key, (num_samples * num_views, 1), dtype=dt)
-            postgrasp_group.create_dataset(key, (num_samples * num_views, 1), dtype=dt)
-        else:
-            pregrasp_group.create_dataset(key, (num_samples * num_views, num_var))
-            postgrasp_group.create_dataset(key, (num_samples * num_views, num_var))
+        pregrasp_group.create_dataset(key, (num_samples * num_views, num_var))
+        postgrasp_group.create_dataset(key, (num_samples * num_views, num_var))
 
     # Collecting this from the sim
     pregrasp_group.create_dataset('grasp_wrt_cam', (num_samples * num_views, 18))
@@ -201,6 +187,7 @@ def collect_images(file_name, input_dir, output_dir, num_views):
 
 
     # Start collection
+    object_name = file_name.split('.')[0]
     for i in xrange(num_samples):
 
         print('Querying for image set %d / %d ' % (i, num_samples))
@@ -217,7 +204,7 @@ def collect_images(file_name, input_dir, output_dir, num_views):
         # Query the simulator for some images; note that we're only collecting
         # this info for the pregrasp here.
         grasp_wrt_cam, frame_work2cam, image_names = \
-            query_minibatch(pregrasp, i, num_views, file_name.split('.')[0])
+            query_minibatch(pregrasp, i, num_views, object_name)
 
         pregrasp_group['grasp_wrt_cam'][low:high] = grasp_wrt_cam
         pregrasp_group['image_name'][low:high] = image_names
@@ -274,9 +261,18 @@ if __name__ == '__main__':
 
     else:
         spawn_params['port'] = int(sys.argv[1])
-        mesh_name = sys.argv[2].split(os.path.sep)[-1].split('.')[0]
 
         sim = SI.SimulatorInterface(**spawn_params)
 
-        collect_images(mesh_name, config_output_collected_dir,
-                       config_output_processed_dir, num_views_per_sample)
+        # List of meshes we should run are stored in a file,
+        mesh_list_file = sys.argv[2]
+        with open(mesh_list_file, 'r') as f:
+            while True:
+                mesh_path = f.readline().rstrip()
+
+                if mesh_path == '':
+                    break
+
+                mesh_name = mesh_path.split(os.path.sep)[-1]
+                collect_images(mesh_name, config_output_collected_dir,
+                               config_output_processed_dir, num_views_per_sample)

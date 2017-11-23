@@ -241,7 +241,6 @@ def collect_grasps(mesh_path, sim,
 
             num_successful += 1
 
-            break
 
     datafile.close()
     print('Finished Collecting!')
@@ -280,8 +279,12 @@ if __name__ == '__main__':
 
         sim = SI.SimulatorInterface(**spawn_params)
 
+        # List of meshes we should run are stored in a file,
         mesh_list_file = sys.argv[2]
         with open(mesh_list_file, 'r') as f:
             while True:
                 mesh_path = f.readline().rstrip()
+
+                if mesh_path == '':
+                    break
                 collect_grasps(mesh_path, sim, num_candidates=1000)
