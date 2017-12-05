@@ -137,7 +137,6 @@ def spawn_simulation(port, vrep_path, scene_path, exit_on_stop,
         process = subprocess.Popen(vrep_cmd, shell=True)
     time.sleep(1)
 
-
     return process
 
 
@@ -182,8 +181,8 @@ class SimulatorInterface(object):
                 raise Exception('Scene <%s> not found' % scene_path)
 
             print('Spawning a Continuous Server on port <%d>' % port)
-            spawn_simulation(port, vrep_path, scene_path, exit_on_stop,
-                             spawn_headless, spawn_new_console)
+            pid = spawn_simulation(port, vrep_path, scene_path, exit_on_stop,
+                                   spawn_headless, spawn_new_console)
 
             # Try starting communication again
             clientID = self._start_communication(ip, port)
