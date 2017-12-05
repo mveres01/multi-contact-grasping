@@ -15,7 +15,9 @@ from lib import vrep
 from postprocess import postprocess
 import simulator as SI
 
+
 vrep.simxFinish(-1)
+
 
 def save_images(images, images_gripper, postfix, save_dir):
     """Saves the queried images to disk."""
@@ -247,32 +249,13 @@ if __name__ == '__main__':
 
     # spawn_params['vrep_path'] = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'
 
-    if len(sys.argv) == 1:
-        sim = SI.SimulatorInterface(**spawn_params)
+    sim = SI.SimulatorInterface(**spawn_params)
 
-        np.random.seed(1234)
+    np.random.seed(1234)
 
-        data_list = os.listdir(config_output_collected_dir)
-        data_list = [d for d in data_list if '.hdf5' in d]
+    data_list = os.listdir(config_output_collected_dir)
+    data_list = [d for d in data_list if '.hdf5' in d]
 
-        for h5file in data_list:
-            collect_images(h5file, config_output_collected_dir,
-                           config_output_processed_dir, num_views_per_sample)
-
-    else:
-        spawn_params['port'] = int(sys.argv[1])
-
-        sim = SI.SimulatorInterface(**spawn_params)
-
-        # List of meshes we should run are stored in a file,
-        mesh_list_file = sys.argv[2]
-        with open(mesh_list_file, 'r') as f:
-            while True:
-                mesh_path = f.readline().rstrip()
-
-                if mesh_path == '':
-                    break
-
-                mesh_name = mesh_path.split(os.path.sep)[-1]
-                collect_images(mesh_name, config_output_collected_dir,
-                               config_output_processed_dir, num_views_per_sample)
+    for h5file in data_list:
+        collect_images(h5file, config_output_collected_dir,
+                       config_output_processed_dir, num_views_per_sample)

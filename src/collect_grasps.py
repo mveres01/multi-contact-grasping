@@ -241,7 +241,6 @@ def collect_grasps(mesh_path, sim,
 
             num_successful += 1
 
-
     datafile.close()
     print('Finished Collecting!')
 
@@ -255,9 +254,8 @@ if __name__ == '__main__':
                     'vrep_path': None,
                     'scene_path': None,
                     'exit_on_stop': True,
-                    'spawn_headless': True,
+                    'spawn_headless': False,
                     'spawn_new_console': True}
-
     
     # Sample way for calling VREP on windows by specifying full path:
     # spawn_params['vrep_path'] = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'

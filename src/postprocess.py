@@ -62,9 +62,23 @@ def postprocess(h5_pregrasp, h5_postgrasp):
     # Clean the dataset: Remove duplicate pregrasp poses via frame_work2palm
     unique = get_unique_idx(pregrasp['frame_work2palm'], -1, 1e-1)
     print('%d / %d unique' % (len(unique), len(pregrasp['frame_work2palm'])))
+    
+    pregrasp = remove_from_dataset(pregrasp, unique)
+    postgrasp = remove_from_dataset(postgrasp, unique)
+
+    # Remove duplicate contact positions / normals
+    grasp = np.hstack([pregrasp['work2contact0'][:],
+                       pregrasp['work2contact1'][:],
+                       pregrasp['work2contact2'][:],
+                       pregrasp['work2normal0'][:],
+                       pregrasp['work2normal1'][:],
+                       pregrasp['work2normal2'][:]])
+    unique = get_unique_idx(grasp, -1, 1e-1)
+    print('%d / %d unique' % (len(unique), len(pregrasp['frame_work2palm'])))
 
     pregrasp = remove_from_dataset(pregrasp, unique)
     postgrasp = remove_from_dataset(postgrasp, unique)
+
 
     # If we've collected a lot of grasps, remove extreme outliers
     if pregrasp['frame_work2palm'].shape[0] > 50:
