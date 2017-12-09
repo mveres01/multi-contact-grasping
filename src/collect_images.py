@@ -257,5 +257,8 @@ if __name__ == '__main__':
     data_list = [d for d in data_list if '.hdf5' in d]
 
     for h5file in data_list:
+
+        if os.path.exists('../output/processed/' + h5file):
+            continue
         collect_images(h5file, config_output_collected_dir,
                        config_output_processed_dir, num_views_per_sample)
