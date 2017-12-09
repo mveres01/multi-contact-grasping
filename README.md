@@ -49,24 +49,16 @@ For both pre- and post-grasp, the following information is recorded:
 | Contacts | positions, forces, and normals |
 | Images | RGB, depth, and a binary object mask |
 
-Once grasping experiments have concluded for the object (or all objects if you're running many experiments), run 
-
-```
-python postprocess_grasps.py
-```
-to merge all data into a single file, remove potential duplicates from the dataset, and remove any extreme outliers. Feel free to modify this file to suit your needs. Data will be saved to _output/grasping.hdf5_. 
-
 # Supplementing the Dataset with Images
 
-Once data collection has finished, we can supplement the dataset by running:
+Once data collection has finished, we can supplement the dataset with images by indexing the .hdf5 files in the _output/collected/_ directory:
 
 ```
 cd src
 python collect_images.py
 ```
 
-which will open up or connect to a running V-REP scene, and begin collecting images using data from _output/grasping.hdf5_. This script uses the state of the simulator at the time of the grasp (i.e. the object pose, gripper pose, angles, etc ...) and restores those parameters before taking an image. 
-
+We first remove potential duplicates grasps from the dataset (based on wrist pose, then contact positions & normals), and remove any extreme outliers. Feel free to modify this file to suit your needs. Next, the simulation will open up or connect to a running V-REP scene, and begin collecting images using data from _output/grasping.hdf5_. This script uses the state of the simulator at the time of the grasp (i.e. the object pose, gripper pose, angles, etc ...) and restores those parameters before taking an image. 
 
 Image randomization is done according to the following properties:
 
@@ -78,6 +70,8 @@ Image randomization is done according to the following properties:
 | Texture Mapping | Plane, sphere, cylinder, cube |
 | Texture Pose | Position, Orientation |
 | Camera | Pose (Resolution, Field of View, near/far planes also supported) |
+
+Data from this phase is stored in the _output/processed/_ folder, where the _*.hdf5_ file stores the grasp metadata, and images are stored in the corresponding directory. RGB images of the object, object + gripper are stored in the .jpg format, while the depth image is stored as a 16-bit floating point numpy array.
 
 Sample images of the pre-grasp:
 
@@ -92,7 +86,7 @@ Sample images of the pre-grasp:
 
 # A Few things to Note:
 
-This project is still under construction, so things may still be changing. Additionally:
+This project is still under construction, so things may still be changing. Additionally, a few points to consider:
 
 1. __Complex meshes are difficult to properly simulate__:  Pure / convex meshes are preferred. There is an option to approximate complex objects with a convex hull, but note that this will change the physical shape of the object, and in some cases may yield weird-looking grasps (i.e. not touching the mesh surface, but touching the hulls surface).
 2. __The object is static during the pregrasp, and dynamically simulated during the lift__: This avoids potentially moving the object before the fingers come into contact with it.
