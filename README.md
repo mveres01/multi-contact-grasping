@@ -8,7 +8,8 @@ This is an extension of [a previous project](https://github.com/mveres01/graspin
   <img src="./docs/sim_overview.JPG" width="500"/>
 </p>
 
-__Sample Data__: To come
+__Sample Data__: Can be viewed [Here](https://drive.google.com/open?id=1AspKT7BFPMjVqkFIZyVCPTmL3fPiJ4Pb), which makes use of the first 100 [Procedurally Generated Random Objects](https://sites.google.com/site/brainrobotdata/home/models) from Google. For each object, all sub-collision objects were merged into a single entity, rescaled to fit the Barrett Hand, and saved in the meshes/ folder. 10 Grasps were attempted for each object, and images were saved in the .PNG format. 
+
 
 # Installation
 
