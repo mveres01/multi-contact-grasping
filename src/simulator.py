@@ -115,7 +115,7 @@ def spawn_simulation(port, vrep_path, scene_path, exit_on_stop,
 
         if find_executable(vrep_path) is None:
             raise Exception('Cannot find %s in PATH to spawn a sim. '
-                            'Try specifying full path to executable. ' % \
+                            'Try specifying full path to executable. ' %
                             vrep_path)
 
     # Command to launch VREP

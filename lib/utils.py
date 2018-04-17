@@ -9,17 +9,18 @@ from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from matplotlib import pyplot as plt
 
-def calc_mesh_centroid(trimesh_mesh,  center_type='vrep'):
+
+def calc_mesh_centroid(trimesh_mesh, center_type='vrep'):
     """Calculates the center of a mesh according to three different metrics."""
 
     if center_type == 'centroid':
         return trimesh_mesh.centroid
     elif center_type == 'com':
         return trimesh_mesh.center_mass
-    elif center_type == 'vrep': # How V-REP assigns object centroid
+    elif center_type == 'vrep':  # How V-REP assigns object centroid
         maxv = np.max(trimesh_mesh.vertices, axis=0)
         minv = np.min(trimesh_mesh.vertices, axis=0)
-        return 0.5*(minv+maxv)
+        return 0.5 * (minv + maxv)
 
 
 def plot_equal_aspect(vertices, axis):
@@ -31,7 +32,7 @@ def plot_equal_aspect(vertices, axis):
 
     max_dim = np.max(np.array(np.max(vertices, axis=0) - np.min(vertices, axis=0)))
 
-    mid = 0.5*np.max(vertices, axis=0) + np.min(vertices, axis=0)
+    mid = 0.5 * np.max(vertices, axis=0) + np.min(vertices, axis=0)
     axis.set_xlim(mid[0] - max_dim, mid[0] + max_dim)
     axis.set_ylim(mid[1] - max_dim, mid[1] + max_dim)
     axis.set_zlim(mid[2] - max_dim, mid[2] + max_dim)
@@ -71,7 +72,7 @@ def plot_mesh(mesh_path, workspace2obj, axis=None):
 
     # Construct a 3D mesh via matplotlibs 'PolyCollection'
     poly = Poly3DCollection(mesh.triangles, linewidths=0.05, alpha=0.25)
-    poly.set_facecolor([0.5,0.5,1])
+    poly.set_facecolor([0.5, 0.5, 1])
     axis.add_collection3d(poly)
 
     return plot_equal_aspect(mesh.vertices, axis)
@@ -107,9 +108,9 @@ def invert_htmatrix(htmatrix):
     shape_in = htmatrix.shape
 
     inv = np.eye(4)
-    rot_T = htmatrix[:3,:3].T
-    inv[:3,:3] = rot_T
-    inv[:3, 3] = -np.dot(rot_T, htmatrix[:3,3])
+    rot_T = htmatrix[:3, :3].T
+    inv[:3, :3] = rot_T
+    inv[:3, 3] = -np.dot(rot_T, htmatrix[:3, 3])
     return inv
 
 
@@ -129,9 +130,9 @@ def rot_x(theta):
     """
 
     mat = np.asarray(
-            [[1, 0,                0],
-             [0, np.cos(theta), -np.sin(theta)],
-             [0, np.sin(theta),  np.cos(theta)]])
+        [[1, 0, 0],
+         [0, np.cos(theta), -np.sin(theta)],
+         [0, np.sin(theta), np.cos(theta)]])
     return mat
 
 
@@ -144,9 +145,9 @@ def rot_y(theta):
     """
 
     mat = np.asarray(
-            [[np.cos(theta), 0, np.sin(theta)],
-             [0,               1, 0],
-             [-np.sin(theta),0, np.cos(theta)]])
+        [[np.cos(theta), 0, np.sin(theta)],
+         [0, 1, 0],
+         [-np.sin(theta), 0, np.cos(theta)]])
     return mat
 
 
@@ -159,33 +160,10 @@ def rot_z(theta):
     """
 
     mat = np.asarray(
-             [[np.cos(theta), -np.sin(theta), 0],
-              [np.sin(theta),  np.cos(theta), 0],
-              [0,                0,               1]])
+        [[np.cos(theta), -np.sin(theta), 0],
+         [np.sin(theta), np.cos(theta), 0],
+         [0, 0, 1]])
     return mat
-
-
-def rxyz(thetax, thetay, thetaz, as_degrees=False):
-    """Calculates rotation matrices by multiplying in the order x,y,z.
-
-    Parameters
-    ----------
-    thetax : rotation around x in degrees.
-    thetay : rotation around y in degrees.
-    thetaz : rotation around z in degrees.
-    """
-
-    if as_degrees is True:
-        thetax = thetax*math.pi/180.
-        thetay = thetay*math.pi/180.
-        thetaz = thetaz*math.pi/180.
-
-    # Convert radians to degrees
-    rx = tf.rotation_matrix(thetax, [1, 0, 0])
-    ry = tf.rotation_matrix(thetay, [0, 1, 0])
-    rz = tf.rotation_matrix(thetaz, [0, 0, 1])
-    rxyz = tf.concatenate_matrices(rx,ry,rz)
-    return rxyz
 
 
 def get_unique_idx(data_in, n_nbrs=-1, thresh=1e-4, scale=False):
@@ -220,7 +198,7 @@ def get_unique_idx(data_in, n_nbrs=-1, thresh=1e-4, scale=False):
     # This vector will contain a list of all indices that may be duplicated.
     # We're going to use each datapoint as a query.
     exclude_vector = np.zeros((data_in.shape[0],), dtype=bool)
-    for i in xrange(data_in.shape[0]):
+    for i in range(data_in.shape[0]):
 
         # If we've already classified the datapoint at this index as being a
         # duplicate, there's no reason to process it again
@@ -229,7 +207,7 @@ def get_unique_idx(data_in, n_nbrs=-1, thresh=1e-4, scale=False):
 
         # Find how close each point is to the query. If we find a point that
         # is less then some threshold, we add it to our exlude list
-        distances, indices = nbrs.kneighbors(data_in[i:i+1])
+        distances, indices = nbrs.kneighbors(data_in[i:i + 1])
         distances = distances.reshape(-1)
         indices = indices.reshape(-1)
 
@@ -254,8 +232,8 @@ def convert_grasp_frame(frame2matrix, matrix2grasp):
 
     # A grasp is contacts, normals, and forces (3), and has (x,y,z) components
     n_fingers = int(matrix2grasp.shape[1] / 6)
-    contact_points = matrix2grasp[0, :n_fingers*3].reshape(3, 3)
-    contact_normals = matrix2grasp[0, n_fingers*3:n_fingers*6].reshape(3, 3)
+    contact_points = matrix2grasp[0, :n_fingers * 3].reshape(3, 3)
+    contact_normals = matrix2grasp[0, n_fingers * 3:n_fingers * 6].reshape(3, 3)
 
     # Append a 1 to end of contacts for easier multiplication
     contact_points = np.hstack([contact_points, np.ones((3, 1))])
@@ -264,10 +242,10 @@ def convert_grasp_frame(frame2matrix, matrix2grasp):
     points = np.zeros((n_fingers, 3))
     normals = np.zeros(points.shape)
 
-    for i in xrange(n_fingers):
+    for i in range(n_fingers):
 
-        points[i] = np.dot(frame2matrix, contact_points[i:i+1].T)[:3].T
-        normals[i] = np.dot(frame2matrix[:3, :3], contact_normals[i:i+1].T).T
+        points[i] = np.dot(frame2matrix, contact_points[i:i + 1].T)[:3].T
+        normals[i] = np.dot(frame2matrix[:3, :3], contact_normals[i:i + 1].T).T
 
     return np.vstack([points, normals]).reshape(1, -1)
 
@@ -276,6 +254,31 @@ def skew_symmetric(x, y, z):
     return np.array([[0, -z, y], [z, 0, -x], [-y, x, 0]])
 
 
+def get_rot_mat(a, b):
+    """Calculates the rotation needed to bring two axes coincident.
+
+    Uses the reflection approach from:
+    ----------------------------------
+    T L Davis (https://math.stackexchange.com/users/411024/t-l-davis),
+    Calculate Rotation Matrix to align Vector A to Vector B in 3d?,
+    URL (version: 2017-04-13): https://math.stackexchange.com/q/2161631
+    """
+
+    def reflection(u, n):
+        return u - 2 * n * np.dot(n.T, u) / (np.dot(n.T, n) + 1e-8)
+
+    u = np.atleast_2d(normalize_vector(a)).T
+    v = np.atleast_2d(normalize_vector(b)).T
+
+    S = reflection(np.eye(3), u + v)
+    R = reflection(S, v)
+
+    eye = np.eye(4)
+    eye[:3, :3] = R
+    return eye
+
+
+'''
 def get_rot_mat(vector1, vector2):
     """Calculates the rotation needed to bring two axes coincident"""
 
@@ -285,6 +288,11 @@ def get_rot_mat(vector1, vector2):
 
     # Take the vector crossproduct and normalize
     cross = np.squeeze(np.cross(vector1, vector2))
+
+    print(vector1, vector2, cross)
+    if np.all(cross == 0):
+        print('0!')
+        return np.eye(4)
 
     frob = np.sqrt(np.sum(cross ** 2))
 
@@ -296,12 +304,13 @@ def get_rot_mat(vector1, vector2):
 
     # Get the rotation matrix
     p1 = np.eye(3) + skew
-    p2 = np.dot(skew, skew) * (1.0 - inner_prod) / (frob ** 2 + 1e-8)
+    p2 = np.dot(skew, skew) * (1.0 - inner_prod) / (frob ** 2)
 
     output = np.eye(4)
-    output[:3, :3] =  p1 + p2
+    output[:3, :3] = p1 + p2
 
     return output
+'''
 
 
 def reorient_up_direction(work2cam, world2work, direction_up, world2point=None):
@@ -349,7 +358,7 @@ def reorient_up_direction(work2cam, world2work, direction_up, world2point=None):
     rotMat = np.array([[right[0], up[0], backwards[0], 0],
                        [right[1], up[1], backwards[1], 0],
                        [right[2], up[2], backwards[2], 0],
-                       [0,        0,     0,            1]])
+                       [0, 0, 0, 1]])
 
     # Do a local rotation of work2cam matrix
     work2cam = np.dot(work2cam, rotMat)
@@ -368,7 +377,7 @@ def rand_step(max_angle):
     """Returns a random point between (-max_angle, max_angle) in radians."""
     if max_angle is None or max_angle <= 0:
         return max_angle
-    return np.float32(np.random.randint(-max_angle, max_angle))*np.pi/180.
+    return np.float32(np.random.randint(-max_angle, max_angle)) * np.pi / 180.
 
 
 def spherical_rotate(max_rot_degrees):
@@ -423,6 +432,7 @@ def randomize_pose(frame_work2pose, base_offset=0., offset_mag=0.01,
 
     # Compute new frame & limit the z-pos to be a minimum height above workspace
     randomized_ht = np.dot(np.dot(global_ht, translation_ht), local_ht)
+
     if min_dist is not None:
         randomized_ht[2, 3] = np.maximum(randomized_ht[2, 3], min_dist)
     return randomized_ht[:3].flatten()

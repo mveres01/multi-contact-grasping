@@ -105,11 +105,10 @@ def query_minibatch(pregrasp, index, num_views, object_name):
         pos = float(pregrasp[key][index, 0])
         sim.set_joint_position_by_name(str(key), pos)
 
-
     grasp_list, frame_work2cam_list, name_list = [], [], []
 
     # For each successful grasp, we'll do a few randomizations of camera / obj
-    for count in xrange(num_views):
+    for count in range(num_views):
 
         # Toggle the gripper to be invisible / visible to the camera, to get
         # an image of the object with & without pregrasp pose
@@ -170,7 +169,6 @@ def collect_images(file_name, input_dir, output_dir, num_views):
         return
     num_samples = len(pregrasp[pregrasp.keys()[0]])
 
-
     out_file = h5py.File(os.path.join(output_dir, file_name), 'w')
 
     pregrasp_group = out_file.create_group('pregrasp')
@@ -187,10 +185,9 @@ def collect_images(file_name, input_dir, output_dir, num_views):
     pregrasp_group.create_dataset('image_name', (num_samples * num_views, ), dtype=dt)
     pregrasp_group.create_dataset('frame_work2cam', (num_samples * num_views, 12))
 
-
     # Start collection
     object_name = file_name.split('.')[0]
-    for i in xrange(num_samples):
+    for i in range(num_samples):
 
         print('Querying for image set %d / %d ' % (i, num_samples))
 
@@ -198,9 +195,9 @@ def collect_images(file_name, input_dir, output_dir, num_views):
         high = (i + 1) * num_views
 
         for key in pregrasp.keys():
-            pregrasp_group[key][low:high] = np.repeat(pregrasp[key][i:i+1],
+            pregrasp_group[key][low:high] = np.repeat(pregrasp[key][i:i + 1],
                                                       num_views, axis=0)
-            postgrasp_group[key][low:high] = np.repeat(postgrasp[key][i:i+1],
+            postgrasp_group[key][low:high] = np.repeat(postgrasp[key][i:i + 1],
                                                        num_views, axis=0)
 
         # Query the simulator for some images; note that we're only collecting
@@ -211,7 +208,6 @@ def collect_images(file_name, input_dir, output_dir, num_views):
         pregrasp_group['grasp_wrt_cam'][low:high] = grasp_wrt_cam
         pregrasp_group['image_name'][low:high] = image_names
         pregrasp_group['frame_work2cam'][low:high] = frame_work2cam
-
 
     f.close()
 
@@ -260,5 +256,6 @@ if __name__ == '__main__':
 
         if os.path.exists('../output/processed/' + h5file):
             continue
+
         collect_images(h5file, config_output_collected_dir,
                        config_output_processed_dir, num_views_per_sample)

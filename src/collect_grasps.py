@@ -72,7 +72,7 @@ def plot_mesh_with_normals(mesh, matrices, direction_vec, axis=None):
 
     axis = lib.utils.plot_equal_aspect(mesh.vertices, axis)
 
-    for i in xrange(0, len(matrices), 10):
+    for i in range(0, len(matrices), 5):
 
         transform = lib.utils.format_htmatrix(matrices[i])
 
@@ -98,16 +98,13 @@ def generate_candidates(mesh, num_samples=1000, noise_level=0.05,
     # Defines the up-vector for the workspace frame
     up_vector = np.asarray([0, 0, -1])
 
-    points = trimesh.sample.sample_surface_even(mesh, num_samples)
+    points, face_idx = trimesh.sample.sample_surface_even(mesh, num_samples)
+
     matrices = []
+    for p, face in zip(points, face_idx):
 
-    # Find the normals corresponding to the sampled points
-    triangles = mesh.triangles_center
-    for p in points:
-
-        face_idx = np.argmin(np.sum((p - triangles)**2, axis=1))
-        normal = mesh.triangles_cross[face_idx]
-        normal = lib.utils.normalize_vector(normal)
+        normal = lib.utils.normalize_vector(mesh.triangles_cross[face])
+        # print(normal, mesh.triangles_cross[face])
 
         # Add random noise to the surface normals, centered around 0
         if augment is True:
@@ -136,7 +133,7 @@ def generate_candidates(mesh, num_samples=1000, noise_level=0.05,
 def collect_grasps(mesh_path, sim,
                    initial_height=0.5,
                    num_candidates=100,
-                   candidate_noise_level=0.05,
+                   candidate_noise_level=0.1,
                    num_random_per_candidate=5,
                    candidate_offset=-0.07,
                    candidate_offset_mag=0.03,
@@ -189,13 +186,13 @@ def collect_grasps(mesh_path, sim,
         if work2candidate[2, 3] <= 0.03:
             continue
 
-        for _ in xrange(num_random_per_candidate):
+        for _ in range(num_random_per_candidate):
 
             sim.set_object_pose(object_pose[:3].flatten())
 
             # We can randomize the gripper candidate by rotation or translation.
             # Here we let the pose vary +- 3cm along local z, and a random
-            # rotation between [0, 360) degress around local z
+            # rotation between[0, 360) degress around local z
             random_pose = lib.utils.randomize_pose(work2candidate,
                                                    offset_mag=candidate_offset_mag,
                                                    local_rot=candidate_local_rot)
@@ -247,7 +244,6 @@ def collect_grasps(mesh_path, sim,
 
 if __name__ == '__main__':
 
-  
     # Use the spawn_headless = False / True flag to view with GUI or not
     spawn_params = {'port': 19997,
                     'ip': '127.0.0.1',
@@ -256,7 +252,7 @@ if __name__ == '__main__':
                     'exit_on_stop': True,
                     'spawn_headless': False,
                     'spawn_new_console': True}
-    
+
     # Sample way for calling VREP on windows by specifying full path:
     # spawn_params['vrep_path'] = 'C:\\Program Files\\V-REP3\\V-REP_PRO_EDU\\vrep.exe'
 
