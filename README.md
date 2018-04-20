@@ -23,7 +23,7 @@ Sample data can be viewed [Here](https://drive.google.com/open?id=1AspKT7BFPMjVq
 
 Install the trimesh library:
 ```
-pip install trimesh>=2.20.21
+pip install trimesh==2.29.10
 ```
 
 Add the remote API interfaces by copying the following files to _lib/_:
